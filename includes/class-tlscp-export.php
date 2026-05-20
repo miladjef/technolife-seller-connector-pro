@@ -20,7 +20,7 @@ class TLSCP_Export {
     }
 
     public static function export_products() {
-        $q = new WP_Query(array('post_type' => 'product', 'post_status' => 'any', 'posts_per_page' => -1, 'fields' => 'ids'));
+        $q = new WP_Query(array('post_type' => array('product', 'product_variation'), 'post_status' => 'any', 'posts_per_page' => -1, 'fields' => 'ids'));
         $rows = array();
         foreach ($q->posts as $product_id) {
             $product = wc_get_product($product_id);

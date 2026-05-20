@@ -93,7 +93,15 @@ class TLSCP_Admin {
                     <tr><th>API Key</th><td><input type="password" class="regular-text ltr" name="api_key" value="<?php echo esc_attr($opts['api_key']); ?>" autocomplete="new-password"><p class="description">بدون عبارت Bearer وارد کنید.</p></td></tr>
                     <tr><th>Secret Key</th><td><input type="password" class="regular-text ltr" name="secret_key" value="<?php echo esc_attr($opts['secret_key']); ?>" autocomplete="new-password"></td></tr>
                     <tr><th>Secret Base64 است؟</th><td><label><input type="checkbox" name="secret_is_base64" value="yes" <?php checked($opts['secret_is_base64'], 'yes'); ?>> بله</label></td></tr>
-                    <tr><th>Payload برای encrypted-secret</th><td><select name="encryption_payload_mode"><option value="path" <?php selected($opts['encryption_payload_mode'], 'path'); ?>>Endpoint Path</option><option value="path_body" <?php selected($opts['encryption_payload_mode'], 'path_body'); ?>>Path + Body</option><option value="empty" <?php selected($opts['encryption_payload_mode'], 'empty'); ?>>Empty String</option></select><p class="description">طبق PDF، encrypted-secret با AES-128-GCM تولید می‌شود. اگر تکنولایف خطای 401 داد، این گزینه را بین حالت‌ها تست کنید.</p></td></tr>
+                    <tr><th>Payload برای encrypted-secret</th><td><select name="encryption_payload_mode">
+                            <option value="path" <?php selected($opts['encryption_payload_mode'], 'path'); ?>>Endpoint Path</option>
+                            <option value="path_query" <?php selected($opts['encryption_payload_mode'], 'path_query'); ?>>Endpoint Path + Query</option>
+                            <option value="full_url" <?php selected($opts['encryption_payload_mode'], 'full_url'); ?>>Full URL بدون Query</option>
+                            <option value="full_url_query" <?php selected($opts['encryption_payload_mode'], 'full_url_query'); ?>>Full URL + Query</option>
+                            <option value="path_body" <?php selected($opts['encryption_payload_mode'], 'path_body'); ?>>Path + Body</option>
+                            <option value="body" <?php selected($opts['encryption_payload_mode'], 'body'); ?>>Body فقط</option>
+                            <option value="empty" <?php selected($opts['encryption_payload_mode'], 'empty'); ?>>Empty String</option>
+                        </select><p class="description">طبق PDF، encrypted-secret با AES-128-GCM و آدرس endpoint ساخته می‌شود. اگر تکنولایف خطای 401 داد، حالت‌های Path یا Path+Query معمولاً منطقی‌ترین گزینه‌ها هستند.</p></td></tr>
                 </table>
             </div>
             <div class="tlscp-panel"><h2>موجودی و سفارش</h2>
@@ -104,7 +112,11 @@ class TLSCP_Admin {
                     <tr><th>حداکثر خرید در سفارش</th><td><input type="number" min="1" name="max_buy_per_order" value="<?php echo esc_attr($opts['max_buy_per_order']); ?>"></td></tr>
                     <tr><th>مخفی‌کردن خودکار موجودی صفر</th><td><label><input type="checkbox" name="auto_hide_zero_stock" value="yes" <?php checked($opts['auto_hide_zero_stock'], 'yes'); ?>> فعال</label></td></tr>
                     <tr><th>ساخت سفارش ووکامرس</th><td><label><input type="checkbox" name="auto_create_orders" value="yes" <?php checked($opts['auto_create_orders'], 'yes'); ?>> سفارش‌های تکنولایف در ووکامرس ساخته شوند</label></td></tr>
-                    <tr><th>تعداد روز دریافت سفارش</th><td><input type="number" min="1" max="90" name="orders_from_days" value="<?php echo esc_attr($opts['orders_from_days']); ?>"></td></tr>
+                    <tr><th>تعداد روز دریافت سفارش</th><td><input type="number" min="1" max="365" name="orders_from_days" value="<?php echo esc_attr($opts['orders_from_days']); ?>"></td></tr>
+                    <tr><th>حداکثر صفحات سفارش</th><td><input type="number" min="1" max="20" name="orders_max_pages" value="<?php echo esc_attr($opts['orders_max_pages']); ?>"> <span class="description">هر صفحه طبق API حداکثر ۱۰۰ آیتم دارد.</span></td></tr>
+                    <tr><th>وضعیت سفارش ووکامرس</th><td><select name="order_status"><option value="wc-processing" <?php selected($opts['order_status'], 'wc-processing'); ?>>در حال انجام</option><option value="wc-on-hold" <?php selected($opts['order_status'], 'wc-on-hold'); ?>>در انتظار بررسی</option><option value="wc-pending" <?php selected($opts['order_status'], 'wc-pending'); ?>>در انتظار پرداخت</option></select></td></tr>
+                    <tr><th>کاهش موجودی بعد از ساخت سفارش</th><td><label><input type="checkbox" name="reduce_stock_on_import" value="yes" <?php checked($opts['reduce_stock_on_import'], 'yes'); ?>> موجودی ووکامرس برای سفارش‌های جدید تکنولایف کاهش داده شود</label></td></tr>
+                    <tr><th>همگام‌سازی هنگام ذخیره محصول</th><td><label><input type="checkbox" name="auto_sync_on_save" value="yes" <?php checked($opts['auto_sync_on_save'], 'yes'); ?>> بعد از ذخیره محصول، قیمت و موجودی به تکنولایف ارسال شود</label></td></tr>
                     <tr><th>کران خودکار</th><td><label><input type="checkbox" name="cron_enabled" value="yes" <?php checked($opts['cron_enabled'], 'yes'); ?>> فعال</label> &nbsp; <label><input type="checkbox" name="cron_sync_inventory" value="yes" <?php checked($opts['cron_sync_inventory'], 'yes'); ?>> موجودی</label> &nbsp; <label><input type="checkbox" name="cron_sync_prices" value="yes" <?php checked($opts['cron_sync_prices'], 'yes'); ?>> قیمت</label> &nbsp; <label><input type="checkbox" name="cron_import_orders" value="yes" <?php checked($opts['cron_import_orders'], 'yes'); ?>> سفارش</label></td></tr>
                 </table>
             </div>
@@ -116,6 +128,7 @@ class TLSCP_Admin {
     public function page_pricing() {
         $opts = $this->opts();
         $terms = get_terms(array('taxonomy' => 'product_cat', 'hide_empty' => false));
+        if (is_wp_error($terms)) { $terms = array(); }
         $rules = isset($opts['category_rules']) && is_array($opts['category_rules']) ? $opts['category_rules'] : array();
         $this->header('قوانین هوشمند قیمت‌گذاری');
         ?>
@@ -146,7 +159,7 @@ class TLSCP_Admin {
 
     public function page_products() {
         $this->header('محصولات متصل به تکنولایف');
-        $q = new WP_Query(array('post_type' => 'product', 'post_status' => 'any', 'posts_per_page' => 50, 'meta_query' => array(array('key' => '_tlscp_enabled', 'value' => 'yes'))));
+        $q = new WP_Query(array('post_type' => array('product','product_variation'), 'post_status' => 'any', 'posts_per_page' => 50, 'meta_query' => array(array('key' => '_tlscp_enabled', 'value' => 'yes'))));
         ?>
         <p><a class="button" href="<?php echo esc_url(wp_nonce_url(admin_url('admin-post.php?action=tlscp_export_products'), 'tlscp_export_products')); ?>">خروجی اکسل/CSV محصولات</a></p>
         <table class="widefat striped"><thead><tr><th>ID</th><th>محصول</th><th>ProductCode</th><th>SellerItemCode</th><th>آخرین قیمت</th><th>آخرین موجودی</th><th>خطا</th><th>عملیات</th></tr></thead><tbody>
@@ -164,7 +177,8 @@ class TLSCP_Admin {
         <p><button class="button button-primary" id="tlscp-import-orders">دریافت سفارش‌ها از API</button> <a class="button" href="<?php echo esc_url(wp_nonce_url(admin_url('admin-post.php?action=tlscp_export_orders'), 'tlscp_export_orders')); ?>">خروجی اکسل/CSV سفارش‌ها</a></p>
         <table class="widefat striped"><thead><tr><th>کد سفارش</th><th>سفارش ووکامرس</th><th>رهگیری</th><th>وضعیت تکنولایف</th><th>مبلغ</th><th>تاریخ</th></tr></thead><tbody>
         <?php foreach ($orders as $o): ?>
-            <tr><td><?php echo esc_html($o['order_code']); ?></td><td><?php echo $o['wc_order_id'] ? '<a href="' . esc_url(get_edit_post_link($o['wc_order_id'])) . '">#' . esc_html($o['wc_order_id']) . '</a>' : '-'; ?></td><td><?php echo esc_html($o['trace_number']); ?></td><td><?php echo esc_html($o['status']); ?></td><td><?php echo esc_html($o['total_price']); ?></td><td><?php echo esc_html($o['order_date']); ?></td></tr>
+            <?php $wc_order = !empty($o['wc_order_id']) ? wc_get_order($o['wc_order_id']) : false; ?>
+            <tr><td><?php echo esc_html($o['order_code']); ?></td><td><?php echo $wc_order ? '<a href="' . esc_url($wc_order->get_edit_order_url()) . '">#' . esc_html($wc_order->get_id()) . '</a>' : '-'; ?></td><td><?php echo esc_html($o['trace_number']); ?></td><td><?php echo esc_html($o['status']); ?></td><td><?php echo esc_html($o['total_price']); ?></td><td><?php echo esc_html($o['order_date']); ?></td></tr>
         <?php endforeach; ?>
         </tbody></table><div id="tlscp-ajax-result"></div>
         <?php $this->footer();
@@ -189,7 +203,7 @@ class TLSCP_Admin {
         $opts = $this->opts();
         $section = isset($_POST['section']) ? sanitize_text_field(wp_unslash($_POST['section'])) : 'settings';
 
-        $text_fields = array('api_base_url','api_key','secret_key','encryption_payload_mode','global_markup_percent','category_strategy','multi_category_strategy','price_source','rounding','out_of_range_strategy','leasing_percent','bnpl_percent','inventory_reserve','inventory_max_send','leave_time','max_buy_per_order','orders_from_days');
+        $text_fields = array('api_base_url','api_key','secret_key','encryption_payload_mode','global_markup_percent','category_strategy','multi_category_strategy','price_source','rounding','out_of_range_strategy','leasing_percent','bnpl_percent','inventory_reserve','inventory_max_send','leave_time','max_buy_per_order','orders_from_days','orders_max_pages','order_status','log_retention_days');
         foreach ($text_fields as $f) {
             if (isset($_POST[$f])) { $opts[$f] = sanitize_text_field(wp_unslash($_POST[$f])); }
         }
@@ -198,7 +212,7 @@ class TLSCP_Admin {
                 $opts[$cb] = isset($_POST[$cb]) ? 'yes' : 'no';
             }
         } else {
-            foreach (array('secret_is_base64','auto_hide_zero_stock','auto_create_orders','cron_enabled','cron_sync_inventory','cron_sync_prices','cron_import_orders') as $cb) {
+            foreach (array('secret_is_base64','auto_hide_zero_stock','auto_create_orders','cron_enabled','cron_sync_inventory','cron_sync_prices','cron_import_orders','auto_sync_on_save','reduce_stock_on_import') as $cb) {
                 $opts[$cb] = isset($_POST[$cb]) ? 'yes' : 'no';
             }
         }
@@ -254,7 +268,7 @@ class TLSCP_Admin {
     public function export_orders() { check_admin_referer('tlscp_export_orders'); TLSCP_Export::export_orders($this->orders); }
 
     private function count_connected_products() {
-        $q = new WP_Query(array('post_type' => 'product', 'post_status' => 'any', 'posts_per_page' => 1, 'meta_query' => array(array('key' => '_tlscp_enabled', 'value' => 'yes'), array('key' => '_tlscp_seller_item_code', 'value' => '', 'compare' => '!='))));
+        $q = new WP_Query(array('post_type' => array('product','product_variation'), 'post_status' => 'any', 'posts_per_page' => 1, 'meta_query' => array(array('key' => '_tlscp_enabled', 'value' => 'yes'), array('key' => '_tlscp_seller_item_code', 'value' => '', 'compare' => '!='))));
         return (int) $q->found_posts;
     }
 }

@@ -3,7 +3,7 @@
  * Plugin Name: Technolife Seller Connector Pro for WooCommerce
  * Plugin URI: https://example.com/
  * Description: اتصال حرفه‌ای ووکامرس به Seller API تکنولایف: قیمت‌گذاری هوشمند، موجودی، سفارش‌ها، پروموشن، لاگ و خروجی اکسل/CSV.
- * Version: 1.0.0
+ * Version: 1.0.1
  * Author: Milad Jafari / ChatGPT
  * Text Domain: tlscp
  * Domain Path: /languages
@@ -16,7 +16,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('TLSCP_VERSION', '1.0.0');
+define('TLSCP_VERSION', '1.0.1');
 define('TLSCP_PLUGIN_FILE', __FILE__);
 define('TLSCP_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('TLSCP_PLUGIN_URL', plugin_dir_url(__FILE__));

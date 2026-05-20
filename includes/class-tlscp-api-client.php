@@ -16,21 +16,60 @@ class TLSCP_API_Client {
 
     public function request($method, $path, $args = array(), $log_action = 'api_request', $retry_payload = null) {
         $opts = $this->options();
-        $base = untrailingslashit($opts['api_base_url']);
-        $path = '/' . ltrim($path, '/');
-        $url = $base . $path;
-        $method = strtoupper($method);
+        $base = untrailingslashit((string) $opts['api_base_url']);
+        $path = '/' . ltrim((string) $path, '/');
+        $method = strtoupper((string) $method);
 
-        $query = isset($args['query']) && is_array($args['query']) ? $args['query'] : array();
-        if (!empty($query)) {
-            $url = add_query_arg(array_filter($query, function($v) { return $v !== '' && $v !== null; }), $url);
+        if (empty($opts['api_key']) || empty($opts['secret_key'])) {
+            $message = 'API Key یا Secret Key تنظیم نشده است.';
+            $log_id = $this->logger->add(array(
+                'action' => $log_action,
+                'method' => $method,
+                'endpoint' => $path,
+                'object_type' => isset($args['object_type']) ? $args['object_type'] : '',
+                'object_id' => isset($args['object_id']) ? $args['object_id'] : '',
+                'http_status' => 0,
+                'success' => 0,
+                'message' => $message,
+                'request_body' => null,
+                'response_body' => null,
+                'retry_payload' => $retry_payload,
+            ));
+            return array('success' => false, 'status' => 0, 'data' => null, 'raw' => '', 'message' => $message, 'log_id' => $log_id);
         }
 
-        $body = isset($args['body']) ? $args['body'] : null;
-        $payload_for_secret = $this->secret_payload($opts, $path, $body, $query);
+        $query = isset($args['query']) && is_array($args['query']) ? $args['query'] : array();
+        $filtered_query = array_filter($query, function($v) { return $v !== '' && $v !== null; });
+        $url = $base . $path;
+        if (!empty($filtered_query)) {
+            $url = add_query_arg($filtered_query, $url);
+        }
+
+        $body = array_key_exists('body', $args) ? $args['body'] : null;
+        $payload_for_secret = $this->secret_payload($opts, $base, $path, $url, $body, $filtered_query);
+        $encrypted_secret = TLSCP_Crypto::encrypted_secret($opts['secret_key'], $payload_for_secret, $opts['secret_is_base64'] === 'yes');
+
+        if ($encrypted_secret === '') {
+            $message = 'ساخت encrypted-secret ناموفق بود. Secret Key یا OpenSSL را بررسی کنید.';
+            $log_id = $this->logger->add(array(
+                'action' => $log_action,
+                'method' => $method,
+                'endpoint' => $path,
+                'object_type' => isset($args['object_type']) ? $args['object_type'] : '',
+                'object_id' => isset($args['object_id']) ? $args['object_id'] : '',
+                'http_status' => 0,
+                'success' => 0,
+                'message' => $message,
+                'request_body' => array('query' => $filtered_query, 'body' => $body),
+                'response_body' => null,
+                'retry_payload' => $retry_payload,
+            ));
+            return array('success' => false, 'status' => 0, 'data' => null, 'raw' => '', 'message' => $message, 'log_id' => $log_id);
+        }
+
         $headers = array(
             'Authorization' => 'Bearer ' . trim((string) $opts['api_key']),
-            'encrypted-secret' => TLSCP_Crypto::encrypted_secret($opts['secret_key'], $payload_for_secret, $opts['secret_is_base64'] === 'yes'),
+            'encrypted-secret' => $encrypted_secret,
             'Accept' => 'application/json',
         );
 
@@ -80,7 +119,7 @@ class TLSCP_API_Client {
             'http_status' => $status,
             'success' => $success ? 1 : 0,
             'message' => $message,
-            'request_body' => array('query' => $query, 'body' => $body),
+            'request_body' => array('query' => $filtered_query, 'body' => $body, 'secret_payload_mode' => isset($opts['encryption_payload_mode']) ? $opts['encryption_payload_mode'] : 'path'),
             'response_body' => $decoded !== null ? $decoded : $raw,
             'retry_payload' => $retry_payload,
         ));
@@ -95,10 +134,25 @@ class TLSCP_API_Client {
         );
     }
 
-    private function secret_payload($opts, $path, $body, $query) {
+    private function secret_payload($opts, $base, $path, $url, $body, $query) {
         $mode = isset($opts['encryption_payload_mode']) ? $opts['encryption_payload_mode'] : 'path';
+        $body_json = $body === null ? '' : wp_json_encode($body, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        $query_string = !empty($query) ? ('?' . http_build_query($query, '', '&', PHP_QUERY_RFC3986)) : '';
+
+        if ($mode === 'path_query') {
+            return $path . $query_string;
+        }
         if ($mode === 'path_body') {
             return $path . '|' . wp_json_encode(array('query' => $query, 'body' => $body), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        }
+        if ($mode === 'body') {
+            return $body_json;
+        }
+        if ($mode === 'full_url') {
+            return untrailingslashit($base) . $path;
+        }
+        if ($mode === 'full_url_query') {
+            return $url;
         }
         if ($mode === 'empty') {
             return '';

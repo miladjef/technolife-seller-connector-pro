@@ -45,19 +45,21 @@ class TLSCP_Installer {
             PRIMARY KEY (id),
             UNIQUE KEY order_code (order_code),
             KEY wc_order_id (wc_order_id),
-            KEY status (status)
+            KEY status (status),
+            KEY order_date (order_date)
         ) {$charset};";
 
         dbDelta($sql_logs);
         dbDelta($sql_orders);
 
-        $defaults = TLSCP_Installer::default_options();
+        $defaults = self::default_options();
         $existing = get_option(TLSCP_OPTION_KEY, array());
         if (!is_array($existing)) {
             $existing = array();
         }
         update_option(TLSCP_OPTION_KEY, wp_parse_args($existing, $defaults), false);
 
+        add_filter('cron_schedules', array(__CLASS__, 'add_cron_schedule'));
         if (!wp_next_scheduled('tlscp_cron_sync')) {
             wp_schedule_event(time() + 300, 'tlscp_15min', 'tlscp_cron_sync');
         }
@@ -69,6 +71,16 @@ class TLSCP_Installer {
             wp_unschedule_event($timestamp, 'tlscp_cron_sync');
             $timestamp = wp_next_scheduled('tlscp_cron_sync');
         }
+    }
+
+    public static function add_cron_schedule($schedules) {
+        if (!isset($schedules['tlscp_15min'])) {
+            $schedules['tlscp_15min'] = array(
+                'interval' => 15 * MINUTE_IN_SECONDS,
+                'display'  => 'Technolife هر ۱۵ دقیقه',
+            );
+        }
+        return $schedules;
     }
 
     public static function default_options() {
@@ -99,8 +111,10 @@ class TLSCP_Installer {
             'cron_sync_inventory' => 'yes',
             'cron_import_orders' => 'yes',
             'orders_from_days' => '7',
+            'orders_max_pages' => '3',
             'auto_create_orders' => 'yes',
             'order_status' => 'wc-processing',
+            'reduce_stock_on_import' => 'no',
             'log_retention_days' => '30'
         );
     }

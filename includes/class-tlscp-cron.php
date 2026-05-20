@@ -11,13 +11,11 @@ class TLSCP_Cron {
     }
 
     public function init() {
-        add_filter('cron_schedules', array($this, 'schedules'));
+        add_filter('cron_schedules', array('TLSCP_Installer', 'add_cron_schedule'));
         add_action('tlscp_cron_sync', array($this, 'run'));
-    }
-
-    public function schedules($schedules) {
-        $schedules['tlscp_15min'] = array('interval' => 15 * MINUTE_IN_SECONDS, 'display' => 'Technolife هر ۱۵ دقیقه');
-        return $schedules;
+        if (!wp_next_scheduled('tlscp_cron_sync')) {
+            wp_schedule_event(time() + 300, 'tlscp_15min', 'tlscp_cron_sync');
+        }
     }
 
     public function run() {
@@ -28,6 +26,10 @@ class TLSCP_Cron {
         }
         if ($opts['cron_sync_prices'] === 'yes' || $opts['cron_sync_inventory'] === 'yes') {
             $this->sync->sync_all_connected($opts['cron_sync_prices'] === 'yes', $opts['cron_sync_inventory'] === 'yes', 50);
+        }
+        if (!empty($opts['log_retention_days']) && class_exists('TLSCP_Logger')) {
+            $logger = new TLSCP_Logger();
+            $logger->clear_old(absint($opts['log_retention_days']));
         }
     }
 }

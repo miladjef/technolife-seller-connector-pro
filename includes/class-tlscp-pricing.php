@@ -11,6 +11,7 @@ class TLSCP_Pricing {
         if (!$product) {
             return 0;
         }
+
         $opts = $this->options();
         $price = 0;
         if ($opts['price_source'] === 'regular') {
@@ -24,6 +25,14 @@ class TLSCP_Pricing {
                 $price = $product->get_price();
             }
         }
+
+        if (($price === '' || $price === null) && $product->is_type('variation')) {
+            $parent = wc_get_product($product->get_parent_id());
+            if ($parent) {
+                $price = $parent->get_price();
+            }
+        }
+
         return (float) wc_format_decimal($price, wc_get_price_decimals());
     }
 
@@ -31,7 +40,8 @@ class TLSCP_Pricing {
         $opts = $this->options();
         $global = (float) $opts['global_markup_percent'];
         $category_rules = isset($opts['category_rules']) && is_array($opts['category_rules']) ? $opts['category_rules'] : array();
-        $term_ids = wp_get_post_terms($product_id, 'product_cat', array('fields' => 'ids'));
+        $term_source_id = $this->category_source_product_id($product_id);
+        $term_ids = wp_get_post_terms($term_source_id, 'product_cat', array('fields' => 'ids'));
         if (is_wp_error($term_ids) || empty($term_ids)) {
             return $global;
         }
@@ -48,11 +58,7 @@ class TLSCP_Pricing {
         }
 
         $strategy = isset($opts['multi_category_strategy']) ? $opts['multi_category_strategy'] : 'highest';
-        if ($strategy === 'lowest') {
-            $category_percent = min($matches);
-        } else {
-            $category_percent = max($matches);
-        }
+        $category_percent = ($strategy === 'lowest') ? min($matches) : max($matches);
 
         if (isset($opts['category_strategy']) && $opts['category_strategy'] === 'add_to_global') {
             return $global + $category_percent;
@@ -62,6 +68,18 @@ class TLSCP_Pricing {
 
     public function calculate_price($product_id, $remote_info = array()) {
         $base = $this->get_base_price($product_id);
+        if ($base <= 0) {
+            return array(
+                'base_price' => $base,
+                'markup_percent' => 0,
+                'calculated_price' => 0,
+                'final_price' => 0,
+                'range_status' => 'blocked',
+                'range_message' => 'قیمت مبنای ووکامرس صفر یا نامعتبر است.',
+                'range' => array('min' => null, 'max' => null),
+            );
+        }
+
         $percent = $this->calculate_markup_percent($product_id);
         $price = $base + ($base * $percent / 100);
         $price = $this->round_price($price);
@@ -86,6 +104,7 @@ class TLSCP_Pricing {
         if ($calc['range_status'] === 'blocked') {
             return array('success' => false, 'message' => $calc['range_message'], 'calc' => $calc);
         }
+
         $cash = array('price' => (float) $calc['final_price']);
         $payload = array('cash' => $cash);
         if ($opts['sync_leasing_bnpl'] === 'yes') {
@@ -111,6 +130,14 @@ class TLSCP_Pricing {
             return ceil($price / 100000) * 100000;
         }
         return round($price);
+    }
+
+    private function category_source_product_id($product_id) {
+        $product = wc_get_product($product_id);
+        if ($product && $product->is_type('variation') && $product->get_parent_id()) {
+            return $product->get_parent_id();
+        }
+        return $product_id;
     }
 
     private function extract_cash_range($remote_info) {

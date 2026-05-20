@@ -1,12 +1,16 @@
 # Technolife Seller Connector Pro for WooCommerce
 
+نسخه: 1.0.1
+
 افزونه اتصال ووکامرس به Seller API تکنولایف، شامل:
 
 - اتصال امن به API با `Authorization` و `encrypted-secret`
 - تولید `encrypted-secret` با AES-128-GCM
+- چند حالت Payload برای `encrypted-secret` جهت سازگاری با ابهام مستندات
 - تست اتصال API
 - متاباکس اتصال تکنولایف در صفحه محصول ووکامرس
-- اتصال محصول به `productCode`، `sellerItemCode` و `SalesCode`
+- فیلد اختصاصی اتصال تکنولایف برای variationهای ووکامرس
+- اتصال محصول/تنوع به `productCode`، `sellerItemCode` و `SalesCode`
 - ارسال قیمت به `/v1/pricing/{sellerItemCode}/info`
 - ارسال موجودی به `/v1/products/{sellerItemCode}/info`
 - مخفی/نمایش خودکار تنوع بر اساس موجودی صفر
@@ -19,8 +23,10 @@
   - کنترل بازه مجاز قیمت تکنولایف
 - دریافت سفارش‌ها از `/v1/orders/sbs`
 - دریافت جزئیات سفارش از `/v1/orders/sbs/{orderCode}`
+- ادغام داده‌های لیست سفارش با جزئیات سفارش برای حفظ `status` و `totalPrice`
 - ساخت سفارش ووکامرس از سفارش تکنولایف
 - ذخیره وضعیت تکنولایف در متای سفارش ووکامرس
+- امکان کاهش موجودی ووکامرس بعد از ساخت سفارش جدید تکنولایف
 - خروجی CSV سازگار با Excel برای محصولات، سفارش‌ها و لاگ‌ها
 - لاگ کامل درخواست‌ها و پاسخ‌های API
 - اجرای مجدد عملیات ناموفق برای قیمت و موجودی
@@ -28,23 +34,27 @@
 
 ## نصب
 
-1. پوشه `technolife-seller-connector-pro` را zip کنید یا فایل zip آماده را از پنل وردپرس نصب کنید.
+1. فایل ZIP افزونه را از مسیر «افزونه‌ها ← افزودن ← بارگذاری افزونه» نصب کنید.
 2. WooCommerce باید فعال باشد.
 3. افزونه را فعال کنید.
 4. از منوی «تکنولایف ← تنظیمات اتصال» API Key و Secret Key را وارد کنید.
 5. تست اتصال API را اجرا کنید.
-6. در صفحه هر محصول، `productCode` و `sellerItemCode` را وارد و اتصال را فعال کنید.
+6. در صفحه هر محصول یا variation، `productCode` و `sellerItemCode` را وارد و اتصال را فعال کنید.
 7. قوانین قیمت‌گذاری را از منوی «قوانین قیمت‌گذاری» تنظیم کنید.
 
 ## نکته مهم درباره encrypted-secret
 
-طبق مستند API، هدر `encrypted-secret` با الگوریتم AES-128-GCM ساخته می‌شود. چون در PDF دقیقاً مشخص نیست متن ورودی رمزنگاری باید فقط مسیر endpoint باشد یا ترکیبی از endpoint و body، در تنظیمات افزونه گزینه‌ای برای تغییر حالت Payload گذاشته شده است:
+طبق مستند API، هدر `encrypted-secret` با الگوریتم AES-128-GCM ساخته می‌شود. چون در PDF دقیقاً مشخص نیست متن ورودی رمزنگاری باید فقط مسیر endpoint باشد یا مسیر همراه query/body/full URL، در تنظیمات افزونه گزینه‌ای برای تغییر حالت Payload گذاشته شده است:
 
 - Endpoint Path
+- Endpoint Path + Query
+- Full URL بدون Query
+- Full URL + Query
 - Path + Body
+- Body فقط
 - Empty String
 
-اگر API خطای 401 داد، این حالت‌ها را تست کنید یا از پشتیبانی تکنولایف مقدار دقیق plaintext را بگیرید.
+پیشنهاد اولیه: `Endpoint Path`. اگر API خطای 401 داد، اول `Endpoint Path + Query` را تست کنید یا از پشتیبانی تکنولایف مقدار دقیق plaintext را بگیرید.
 
 ## محدودیت مستند فعلی
 
