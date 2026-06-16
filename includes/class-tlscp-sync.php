@@ -180,7 +180,13 @@ class TLSCP_Sync {
                 }
             }
         }
-        return $product->is_in_stock() ? 999 : 0;
+        // محصول بدون مدیریت موجودی: اگر «موجود» باشد، مقدار پیش‌فرض قابل‌تنظیم ارسال می‌شود (به‌جای عدد بزرگ خطرناک).
+        if ($product->is_in_stock()) {
+            $opts = wp_parse_args(get_option(TLSCP_OPTION_KEY, array()), TLSCP_Installer::default_options());
+            $fallback = isset($opts['inventory_unmanaged_qty']) ? absint($opts['inventory_unmanaged_qty']) : 5;
+            return max(0, $fallback);
+        }
+        return 0;
     }
 
     private function product_error($product_id, $message) {

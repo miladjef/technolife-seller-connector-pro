@@ -82,6 +82,11 @@ class TLSCP_Pricing {
 
         $percent = $this->calculate_markup_percent($product_id);
         $price = $base + ($base * $percent / 100);
+
+        // تبدیل به ریال: اگر واحد فروشگاه «تومان» باشد، در ۱۰ ضرب می‌شود تا با بازه‌ی ریالی تکنولایف هم‌واحد شود.
+        $price = $price * $this->price_unit_multiplier();
+
+        // گرد کردن در واحد ریال و سپس بررسی بازه‌ی مجاز (که از تکنولایف به ریال دریافت می‌شود).
         $price = $this->round_price($price);
 
         $range = $this->extract_cash_range($remote_info);
@@ -98,6 +103,16 @@ class TLSCP_Pricing {
         );
     }
 
+    /**
+     * ضریب تبدیل واحد قیمت فروشگاه به ریال.
+     * 'rial' → 1   |   'toman' → 10
+     */
+    public function price_unit_multiplier() {
+        $opts = $this->options();
+        $unit = isset($opts['price_unit']) ? $opts['price_unit'] : 'rial';
+        return $unit === 'toman' ? 10 : 1;
+    }
+
     public function price_payload($product_id, $remote_info = array()) {
         $opts = $this->options();
         $calc = $this->calculate_price($product_id, $remote_info);
@@ -105,13 +120,14 @@ class TLSCP_Pricing {
             return array('success' => false, 'message' => $calc['range_message'], 'calc' => $calc);
         }
 
-        $cash = array('price' => (float) $calc['final_price']);
+        // قیمت‌های ریالی باید عدد صحیح باشند (مطابق نمونه‌های مستند).
+        $cash = array('price' => (int) round($calc['final_price']));
         $payload = array('cash' => $cash);
         if ($opts['sync_leasing_bnpl'] === 'yes') {
             $leasing_percent = (float) $opts['leasing_percent'];
             $bnpl_percent = (float) $opts['bnpl_percent'];
-            $payload['leasing'] = array('price' => (float) $this->round_price($calc['final_price'] + ($calc['final_price'] * $leasing_percent / 100)));
-            $payload['bnpl'] = array('price' => (float) $this->round_price($calc['final_price'] + ($calc['final_price'] * $bnpl_percent / 100)));
+            $payload['leasing'] = array('price' => (int) round($this->round_price($calc['final_price'] + ($calc['final_price'] * $leasing_percent / 100))));
+            $payload['bnpl'] = array('price' => (int) round($this->round_price($calc['final_price'] + ($calc['final_price'] * $bnpl_percent / 100))));
         }
         return array('success' => true, 'payload' => $payload, 'calc' => $calc);
     }

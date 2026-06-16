@@ -42,7 +42,12 @@ class TLSCP_Admin {
     }
 
     public function assets($hook) {
-        if (strpos($hook, 'tlscp') === false && $hook !== 'post.php' && $hook !== 'post-new.php') { return; }
+        $is_product_edit = false;
+        if ($hook === 'post.php' || $hook === 'post-new.php') {
+            $screen = function_exists('get_current_screen') ? get_current_screen() : null;
+            $is_product_edit = $screen && isset($screen->post_type) && $screen->post_type === 'product';
+        }
+        if (strpos($hook, 'tlscp') === false && !$is_product_edit) { return; }
         wp_enqueue_style('tlscp-admin', TLSCP_PLUGIN_URL . 'assets/admin.css', array(), TLSCP_VERSION);
         wp_enqueue_script('tlscp-admin', TLSCP_PLUGIN_URL . 'assets/admin.js', array('jquery'), TLSCP_VERSION, true);
         wp_localize_script('tlscp-admin', 'TLSCP', array('ajaxurl' => admin_url('admin-ajax.php'), 'nonce' => wp_create_nonce('tlscp_admin_nonce')));
@@ -91,7 +96,18 @@ class TLSCP_Admin {
                 <table class="form-table" role="presentation">
                     <tr><th>Base URL</th><td><input type="url" class="regular-text ltr" name="api_base_url" value="<?php echo esc_attr($opts['api_base_url']); ?>"></td></tr>
                     <tr><th>API Key</th><td><input type="password" class="regular-text ltr" name="api_key" value="<?php echo esc_attr($opts['api_key']); ?>" autocomplete="new-password"><p class="description">بدون عبارت Bearer وارد کنید.</p></td></tr>
-                    <tr><th>Secret Key</th><td><input type="password" class="regular-text ltr" name="secret_key" value="<?php echo esc_attr($opts['secret_key']); ?>" autocomplete="new-password"></td></tr>
+                    <tr><th>Secret Key</th><td><input type="password" class="regular-text ltr" name="secret_key" value="<?php echo esc_attr($opts['secret_key']); ?>" autocomplete="new-password"><?php
+                        if (!empty($opts['secret_key'])) {
+                            $klen = TLSCP_Crypto::decoded_key_length($opts['secret_key'], $opts['secret_is_base64'] === 'yes');
+                            if ($klen === 16) {
+                                echo '<p class="description" style="color:#006b2d">✔ کلید معتبر است (۱۶ بایت، مناسب AES-128).</p>';
+                            } elseif ($klen === -1) {
+                                echo '<p class="description" style="color:#b42318">✖ مقدار Secret یک Base64 معتبر نیست. تیک «Base64 است؟» را بررسی کنید.</p>';
+                            } else {
+                                echo '<p class="description" style="color:#b42318">✖ طول کلید پس از decode برابر ' . esc_html($klen) . ' بایت است، اما باید دقیقاً ۱۶ بایت باشد. اتصال با این کلید خطای 401 می‌دهد.</p>';
+                            }
+                        }
+                    ?></td></tr>
                     <tr><th>Secret Base64 است؟</th><td><label><input type="checkbox" name="secret_is_base64" value="yes" <?php checked($opts['secret_is_base64'], 'yes'); ?>> بله</label></td></tr>
                     <tr><th>Payload برای encrypted-secret</th><td><select name="encryption_payload_mode">
                             <option value="path" <?php selected($opts['encryption_payload_mode'], 'path'); ?>>Endpoint Path</option>
@@ -108,6 +124,7 @@ class TLSCP_Admin {
                 <table class="form-table" role="presentation">
                     <tr><th>رزرو موجودی برای سایت</th><td><input type="number" min="0" name="inventory_reserve" value="<?php echo esc_attr($opts['inventory_reserve']); ?>"></td></tr>
                     <tr><th>سقف موجودی ارسالی</th><td><input type="number" min="0" name="inventory_max_send" value="<?php echo esc_attr($opts['inventory_max_send']); ?>"> <span class="description">خالی یعنی بدون سقف.</span></td></tr>
+                    <tr><th>موجودی محصولات بدون انبارش</th><td><input type="number" min="0" name="inventory_unmanaged_qty" value="<?php echo esc_attr($opts['inventory_unmanaged_qty']); ?>"> <span class="description">برای محصولاتی که موجودی ووکامرس‌شان مدیریت نمی‌شود ولی «موجود» هستند، این تعداد به تکنولایف ارسال می‌شود.</span></td></tr>
                     <tr><th>بازه ارسال leaveTime</th><td><input type="number" min="0" name="leave_time" value="<?php echo esc_attr($opts['leave_time']); ?>"></td></tr>
                     <tr><th>حداکثر خرید در سفارش</th><td><input type="number" min="1" name="max_buy_per_order" value="<?php echo esc_attr($opts['max_buy_per_order']); ?>"></td></tr>
                     <tr><th>مخفی‌کردن خودکار موجودی صفر</th><td><label><input type="checkbox" name="auto_hide_zero_stock" value="yes" <?php checked($opts['auto_hide_zero_stock'], 'yes'); ?>> فعال</label></td></tr>
@@ -137,6 +154,7 @@ class TLSCP_Admin {
             <div class="tlscp-panel"><h2>قانون کلی</h2>
                 <table class="form-table" role="presentation">
                     <tr><th>درصد افزایش کلی</th><td><input type="number" step="0.01" name="global_markup_percent" value="<?php echo esc_attr($opts['global_markup_percent']); ?>"> ٪</td></tr>
+                    <tr><th>واحد قیمت فروشگاه</th><td><select name="price_unit"><option value="rial" <?php selected($opts['price_unit'], 'rial'); ?>>ریال (بدون تبدیل)</option><option value="toman" <?php selected($opts['price_unit'], 'toman'); ?>>تومان (در ۱۰ ضرب شود)</option></select><p class="description">تکنولایف قیمت‌ها را به <strong>ریال</strong> می‌خواهد. اگر قیمت محصولات ووکامرس شما به تومان است، این گزینه را روی «تومان» بگذارید تا قیمت‌ها ۱۰ برابر و هم‌واحدِ بازه‌ی مجاز تکنولایف شوند.</p></td></tr>
                     <tr><th>قیمت مبنا</th><td><select name="price_source"><option value="sale_or_regular" <?php selected($opts['price_source'], 'sale_or_regular'); ?>>فروش ویژه؛ اگر نبود قیمت عادی</option><option value="regular" <?php selected($opts['price_source'], 'regular'); ?>>قیمت عادی</option><option value="current" <?php selected($opts['price_source'], 'current'); ?>>قیمت فعلی ووکامرس</option></select></td></tr>
                     <tr><th>نحوه اعمال دسته‌بندی</th><td><select name="category_strategy"><option value="replace_global" <?php selected($opts['category_strategy'], 'replace_global'); ?>>درصد دسته‌بندی جایگزین درصد کلی شود</option><option value="add_to_global" <?php selected($opts['category_strategy'], 'add_to_global'); ?>>درصد دسته‌بندی با درصد کلی جمع شود</option></select></td></tr>
                     <tr><th>اگر محصول چند دسته داشت</th><td><select name="multi_category_strategy"><option value="highest" <?php selected($opts['multi_category_strategy'], 'highest'); ?>>بیشترین درصد</option><option value="lowest" <?php selected($opts['multi_category_strategy'], 'lowest'); ?>>کمترین درصد</option></select></td></tr>
@@ -203,7 +221,7 @@ class TLSCP_Admin {
         $opts = $this->opts();
         $section = isset($_POST['section']) ? sanitize_text_field(wp_unslash($_POST['section'])) : 'settings';
 
-        $text_fields = array('api_base_url','api_key','secret_key','encryption_payload_mode','global_markup_percent','category_strategy','multi_category_strategy','price_source','rounding','out_of_range_strategy','leasing_percent','bnpl_percent','inventory_reserve','inventory_max_send','leave_time','max_buy_per_order','orders_from_days','orders_max_pages','order_status','log_retention_days');
+        $text_fields = array('api_base_url','api_key','secret_key','encryption_payload_mode','global_markup_percent','price_unit','category_strategy','multi_category_strategy','price_source','rounding','out_of_range_strategy','leasing_percent','bnpl_percent','inventory_reserve','inventory_max_send','inventory_unmanaged_qty','leave_time','max_buy_per_order','orders_from_days','orders_max_pages','order_status','log_retention_days');
         foreach ($text_fields as $f) {
             if (isset($_POST[$f])) { $opts[$f] = sanitize_text_field(wp_unslash($_POST[$f])); }
         }

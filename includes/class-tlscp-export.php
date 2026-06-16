@@ -39,7 +39,7 @@ class TLSCP_Export {
                 get_post_meta($product_id, '_tlscp_last_error', true),
             );
         }
-        self::download_csv('technolife-products-' . date('Y-m-d') . '.csv', array('ID','Name','SKU','ProductCode','SellerItemCode','SalesCode','WooPrice','WooStock','LastTLPrice','LastTLStock','LastError'), $rows);
+        self::download_csv('technolife-products-' . gmdate('Y-m-d') . '.csv', array('ID','Name','SKU','ProductCode','SellerItemCode','SalesCode','WooPrice','WooStock','LastTLPrice','LastTLStock','LastError'), $rows);
     }
 
     public static function export_logs($logger) {
@@ -48,7 +48,7 @@ class TLSCP_Export {
         foreach ($logs as $log) {
             $rows[] = array($log['id'], $log['created_at'], $log['action'], $log['method'], $log['endpoint'], $log['object_type'], $log['object_id'], $log['http_status'], $log['success'], $log['message']);
         }
-        self::download_csv('technolife-logs-' . date('Y-m-d') . '.csv', array('ID','CreatedAt','Action','Method','Endpoint','ObjectType','ObjectID','HTTP','Success','Message'), $rows);
+        self::download_csv('technolife-logs-' . gmdate('Y-m-d') . '.csv', array('ID','CreatedAt','Action','Method','Endpoint','ObjectType','ObjectID','HTTP','Success','Message'), $rows);
     }
 
     public static function export_orders($orders) {
@@ -57,6 +57,6 @@ class TLSCP_Export {
         foreach ($items as $o) {
             $rows[] = array($o['order_code'], $o['wc_order_id'], $o['trace_number'], $o['status'], $o['total_price'], $o['order_date'], $o['updated_at']);
         }
-        self::download_csv('technolife-orders-' . date('Y-m-d') . '.csv', array('OrderCode','WCOrderID','TraceNumber','Status','TotalPrice','OrderDate','UpdatedAt'), $rows);
+        self::download_csv('technolife-orders-' . gmdate('Y-m-d') . '.csv', array('OrderCode','WCOrderID','TraceNumber','Status','TotalPrice','OrderDate','UpdatedAt'), $rows);
     }
 }

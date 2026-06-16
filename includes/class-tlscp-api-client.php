@@ -40,13 +40,12 @@ class TLSCP_API_Client {
 
         $query = isset($args['query']) && is_array($args['query']) ? $args['query'] : array();
         $filtered_query = array_filter($query, function($v) { return $v !== '' && $v !== null; });
-        $url = $base . $path;
-        if (!empty($filtered_query)) {
-            $url = add_query_arg($filtered_query, $url);
-        }
+        // ساخت یکدستِ query string تا plaintextِ encrypted-secret دقیقاً با URL واقعی یکی باشد.
+        $query_string = !empty($filtered_query) ? ('?' . http_build_query($filtered_query, '', '&', PHP_QUERY_RFC3986)) : '';
+        $url = $base . $path . $query_string;
 
         $body = array_key_exists('body', $args) ? $args['body'] : null;
-        $payload_for_secret = $this->secret_payload($opts, $base, $path, $url, $body, $filtered_query);
+        $payload_for_secret = $this->secret_payload($opts, $base, $path, $url, $body, $filtered_query, $query_string);
         $encrypted_secret = TLSCP_Crypto::encrypted_secret($opts['secret_key'], $payload_for_secret, $opts['secret_is_base64'] === 'yes');
 
         if ($encrypted_secret === '') {
@@ -134,10 +133,12 @@ class TLSCP_API_Client {
         );
     }
 
-    private function secret_payload($opts, $base, $path, $url, $body, $query) {
+    private function secret_payload($opts, $base, $path, $url, $body, $query, $query_string = '') {
         $mode = isset($opts['encryption_payload_mode']) ? $opts['encryption_payload_mode'] : 'path';
         $body_json = $body === null ? '' : wp_json_encode($body, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-        $query_string = !empty($query) ? ('?' . http_build_query($query, '', '&', PHP_QUERY_RFC3986)) : '';
+        if ($query_string === '' && !empty($query)) {
+            $query_string = '?' . http_build_query($query, '', '&', PHP_QUERY_RFC3986);
+        }
 
         if ($mode === 'path_query') {
             return $path . $query_string;
@@ -202,6 +203,11 @@ class TLSCP_API_Client {
 
     public function update_promotion($seller_item_code, $body) {
         return $this->request('PUT', '/v1/promotion/' . rawurlencode($seller_item_code) . '/info', array('body' => $body, 'object_type' => 'seller_item', 'object_id' => $seller_item_code), 'update_promotion');
+    }
+
+    public function create_variation($body) {
+        // POST /v1/products/create/variation  (required: productCode, guaranteeId, variationId)
+        return $this->request('POST', '/v1/products/create/variation', array('body' => $body, 'object_type' => 'product', 'object_id' => isset($body['productCode']) ? $body['productCode'] : ''), 'create_variation');
     }
 
     public function orders($query = array()) {

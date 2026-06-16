@@ -10,6 +10,30 @@ class TLSCP_Orders {
         $this->logger = $logger;
     }
 
+    private function get_existing_order_row($order_code) {
+        global $wpdb;
+        $order_code = sanitize_text_field($order_code);
+        if ($order_code === '') { return null; }
+        return $wpdb->get_row($wpdb->prepare("SELECT * FROM {$this->table()} WHERE order_code = %s", $order_code), ARRAY_A);
+    }
+
+    /**
+     * به‌روزرسانی سبک ردیف سفارش از روی آیتم لیست، بدون درخواست جزئیات و بدون دست‌زدن به سفارش ووکامرس.
+     */
+    private function update_existing_from_list($existing, $list_item) {
+        global $wpdb;
+        $order_code = sanitize_text_field($existing['order_code']);
+        $row = array(
+            'trace_number' => isset($list_item['traceNumber']) ? sanitize_text_field($list_item['traceNumber']) : $existing['trace_number'],
+            'status'       => isset($list_item['status']) ? sanitize_text_field($list_item['status']) : $existing['status'],
+            'total_price'  => isset($list_item['totalPrice']) ? (float) $list_item['totalPrice'] : $existing['total_price'],
+            'order_date'   => !empty($list_item['orderDate']) ? $this->api_date_to_mysql($list_item['orderDate']) : $existing['order_date'],
+            'updated_at'   => current_time('mysql'),
+        );
+        $wpdb->update($this->table(), $row, array('order_code' => $order_code));
+        return array('success' => true, 'order_code' => $order_code, 'wc_order_id' => absint($existing['wc_order_id']), 'created' => false, 'light' => true);
+    }
+
     public function table() {
         global $wpdb;
         return $wpdb->prefix . 'tlscp_orders';
@@ -41,7 +65,21 @@ class TLSCP_Orders {
 
             foreach ($items as $item) {
                 if (empty($item['code'])) { continue; }
-                $detail = $this->api->order_details($item['code']);
+                $order_code = sanitize_text_field($item['code']);
+                $list_status = isset($item['status']) ? (string) $item['status'] : '';
+
+                // اگر سفارش قبلاً ذخیره شده و وضعیتش تغییر نکرده، جزئیات را دوباره از API نمی‌گیریم
+                // (کاهش چشمگیر تعداد درخواست‌ها). فقط مبلغ/تاریخ سبک به‌روزرسانی می‌شود.
+                $existing = $this->get_existing_order_row($order_code);
+                if ($existing && (string) $existing['status'] === $list_status && $list_status !== '') {
+                    $light = $this->update_existing_from_list($existing, $item);
+                    $stats['imported']++;
+                    $stats['updated']++;
+                    $stats['items'][] = $light;
+                    continue;
+                }
+
+                $detail = $this->api->order_details($order_code);
                 if (!$detail['success']) { $stats['failed']++; $stats['items'][] = $detail; continue; }
                 $detail_data = is_array($detail['data']) ? $detail['data'] : array();
                 $merged = $this->merge_order_list_and_detail($item, $detail_data);

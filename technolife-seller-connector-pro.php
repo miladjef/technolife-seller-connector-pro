@@ -1,7 +1,7 @@
 <?php
 /**
  * Plugin Name: Technolife Seller Connector Pro for WooCommerce
- * Plugin URI: https://miladjafarigavzan.ir/
+* Plugin URI: https://miladjafarigavzan.ir/
  * Description: اتصال حرفه‌ای ووکامرس به Seller API تکنولایف: قیمت‌گذاری هوشمند، موجودی، سفارش‌ها، پروموشن، لاگ و خروجی اکسل/CSV.
  * Version: 1.0.1
  * Author: Milad Jafari Gavzan
@@ -16,7 +16,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('TLSCP_VERSION', '1.0.1');
+define('TLSCP_VERSION', '1.1.0');
 define('TLSCP_PLUGIN_FILE', __FILE__);
 define('TLSCP_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('TLSCP_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -83,6 +83,14 @@ final class TLSCP_Plugin {
         }
     }
 }
+
+// اعلام سازگاری با HPOS (جدول سفارش‌های سفارشی ووکامرس) تا ووکامرس افزونه را ناسازگار اعلام نکند.
+add_action('before_woocommerce_init', function () {
+    if (class_exists('\Automattic\WooCommerce\Utilities\FeaturesUtil')) {
+        \Automattic\WooCommerce\Utilities\FeaturesUtil::declare_compatibility('custom_order_tables', TLSCP_PLUGIN_FILE, true);
+        \Automattic\WooCommerce\Utilities\FeaturesUtil::declare_compatibility('product_block_editor', TLSCP_PLUGIN_FILE, true);
+    }
+});
 
 register_activation_hook(__FILE__, array('TLSCP_Installer', 'activate'));
 register_deactivation_hook(__FILE__, array('TLSCP_Installer', 'deactivate'));
