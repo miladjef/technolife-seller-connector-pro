@@ -116,7 +116,10 @@ class TLSCP_Installer {
             'orders_max_pages' => '3',
             'auto_create_orders' => 'yes',
             'order_status' => 'wc-processing',
+            'order_status_sync' => 'no',
+            'order_status_map' => array(),
             'reduce_stock_on_import' => 'no',
+            'buybox_alerts' => 'yes',
             'log_retention_days' => '30'
         );
     }

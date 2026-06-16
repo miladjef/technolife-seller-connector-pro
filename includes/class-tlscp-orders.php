@@ -10,6 +10,44 @@ class TLSCP_Orders {
         $this->logger = $logger;
     }
 
+    /**
+     * نگاشت وضعیت تکنولایف به وضعیت سفارش ووکامرس (از تنظیمات).
+     */
+    public function status_map() {
+        $opts = wp_parse_args(get_option(TLSCP_OPTION_KEY, array()), TLSCP_Installer::default_options());
+        return isset($opts['order_status_map']) && is_array($opts['order_status_map']) ? $opts['order_status_map'] : array();
+    }
+
+    /**
+     * وضعیت‌های تکنولایفی که تاکنون در سفارش‌ها دیده شده‌اند (برای ساخت جدول نگاشت در پنل).
+     */
+    public function seen_statuses() {
+        global $wpdb;
+        $rows = $wpdb->get_col("SELECT DISTINCT status FROM {$this->table()} WHERE status <> '' ORDER BY status ASC");
+        return is_array($rows) ? $rows : array();
+    }
+
+    /**
+     * اگر همگام‌سازی وضعیت فعال باشد و نگاشت موجود باشد، وضعیت سفارش ووکامرس را به‌روزرسانی می‌کند.
+     */
+    private function maybe_sync_wc_status($wc_order_id, $tl_status) {
+        $opts = wp_parse_args(get_option(TLSCP_OPTION_KEY, array()), TLSCP_Installer::default_options());
+        if (!isset($opts['order_status_sync']) || $opts['order_status_sync'] !== 'yes') {
+            return false;
+        }
+        $wc_order_id = absint($wc_order_id);
+        $tl_status = (string) $tl_status;
+        if (!$wc_order_id || $tl_status === '') { return false; }
+        $map = $this->status_map();
+        if (empty($map[$tl_status])) { return false; }
+        $wc_status = str_replace('wc-', '', sanitize_text_field($map[$tl_status]));
+        if (!function_exists('wc_get_order')) { return false; }
+        $order = wc_get_order($wc_order_id);
+        if (!$order || $order->get_status() === $wc_status) { return false; }
+        $order->update_status($wc_status, 'همگام‌سازی وضعیت از تکنولایف: ' . $tl_status, true);
+        return true;
+    }
+
     private function get_existing_order_row($order_code) {
         global $wpdb;
         $order_code = sanitize_text_field($order_code);
@@ -31,7 +69,11 @@ class TLSCP_Orders {
             'updated_at'   => current_time('mysql'),
         );
         $wpdb->update($this->table(), $row, array('order_code' => $order_code));
-        return array('success' => true, 'order_code' => $order_code, 'wc_order_id' => absint($existing['wc_order_id']), 'created' => false, 'light' => true);
+        $wc_order_id = absint($existing['wc_order_id']);
+        if ($wc_order_id && isset($list_item['status'])) {
+            $this->maybe_sync_wc_status($wc_order_id, $list_item['status']);
+        }
+        return array('success' => true, 'order_code' => $order_code, 'wc_order_id' => $wc_order_id, 'created' => false, 'light' => true);
     }
 
     public function table() {
@@ -152,6 +194,9 @@ class TLSCP_Orders {
         } else {
             $row['created_at'] = current_time('mysql');
             $wpdb->insert($this->table(), $row);
+        }
+        if ($wc_order_id && isset($data['status'])) {
+            $this->maybe_sync_wc_status($wc_order_id, $data['status']);
         }
         return array('success' => true, 'order_code' => $order_code, 'wc_order_id' => $wc_order_id, 'created' => $created);
     }

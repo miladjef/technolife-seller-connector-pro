@@ -35,7 +35,9 @@ class TLSCP_Product_Meta {
         <?php if ($fields['_tlscp_last_error']) : ?><p class="tlscp-danger"><strong>خطا:</strong> <?php echo esc_html($fields['_tlscp_last_error']); ?></p><?php endif; ?>
         <p>
             <button type="button" class="button button-primary tlscp-sync-product" data-product-id="<?php echo esc_attr($post->ID); ?>">ارسال قیمت و موجودی</button>
+            <button type="button" class="button tlscp-load-item-info" data-product-id="<?php echo esc_attr($post->ID); ?>">اطلاعات زنده تکنولایف</button>
         </p>
+        <div class="tlscp-item-info" data-for="<?php echo esc_attr($post->ID); ?>"></div>
         <?php
     }
 
@@ -82,7 +84,8 @@ class TLSCP_Product_Meta {
             <p class="form-row form-row-first"><label>ProductCode</label><input type="text" class="short" name="tlscp_variation_product_code[<?php echo esc_attr($variation_id); ?>]" value="<?php echo esc_attr($fields['_tlscp_product_code']); ?>" placeholder="اگر خالی باشد از محصول مادر خوانده می‌شود"></p>
             <p class="form-row form-row-last"><label>SellerItemCode</label><input type="text" class="short" name="tlscp_variation_seller_item_code[<?php echo esc_attr($variation_id); ?>]" value="<?php echo esc_attr($fields['_tlscp_seller_item_code']); ?>"></p>
             <p class="form-row form-row-first"><label>SalesCode</label><input type="text" class="short" name="tlscp_variation_sales_code[<?php echo esc_attr($variation_id); ?>]" value="<?php echo esc_attr($fields['_tlscp_sales_code']); ?>"></p>
-            <p class="form-row form-row-last"><button type="button" class="button tlscp-sync-product" data-product-id="<?php echo esc_attr($variation_id); ?>">ارسال این تنوع</button></p>
+            <p class="form-row form-row-last"><button type="button" class="button tlscp-sync-product" data-product-id="<?php echo esc_attr($variation_id); ?>">ارسال این تنوع</button> <button type="button" class="button tlscp-load-item-info" data-product-id="<?php echo esc_attr($variation_id); ?>">اطلاعات زنده</button></p>
+            <div class="tlscp-item-info" data-for="<?php echo esc_attr($variation_id); ?>" style="clear:both"></div>
             <div style="clear:both"></div>
             <?php if ($fields['_tlscp_last_error']) : ?><p class="tlscp-danger"><strong>خطا:</strong> <?php echo esc_html($fields['_tlscp_last_error']); ?></p><?php endif; ?>
         </div>
@@ -119,6 +122,14 @@ class TLSCP_Product_Meta {
         $seller = get_post_meta($post_id, '_tlscp_seller_item_code', true);
         if ($enabled === 'yes' && $seller) {
             echo '<span class="tlscp-badge tlscp-ok">متصل</span><br><small>' . esc_html($seller) . '</small>';
+            $opts = get_option(TLSCP_OPTION_KEY, array());
+            $alerts = !is_array($opts) || !isset($opts['buybox_alerts']) || $opts['buybox_alerts'] === 'yes';
+            $bb = get_post_meta($post_id, '_tlscp_buybox_winner', true);
+            if ($alerts && $bb !== '') {
+                echo $bb === 'yes'
+                    ? '<br><span class="tlscp-badge tlscp-ok">برنده بای‌باکس</span>'
+                    : '<br><span class="tlscp-badge tlscp-error">بازنده بای‌باکس</span>';
+            }
         } else {
             echo '<span class="tlscp-badge">متصل نیست</span>';
         }

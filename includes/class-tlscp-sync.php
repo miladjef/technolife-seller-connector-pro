@@ -130,10 +130,99 @@ class TLSCP_Sync {
         foreach ($result['data']['data'] as $item) {
             if (isset($item['code']) && (string) $item['code'] === (string) $seller_item_code) {
                 update_post_meta($product_id, '_tlscp_remote_snapshot', wp_json_encode($item, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+                $this->store_item_snapshot_meta($product_id, $item);
                 return $item;
             }
         }
         return array();
+    }
+
+    /**
+     * استخراج اطلاعات زنده‌ی یک تنوع از API بدون تغییر قیمت/موجودی (برای نمایش در متاباکس).
+     */
+    public function live_item_info($product_id) {
+        $product_code = $this->get_tlscp_meta($product_id, '_tlscp_product_code', true);
+        $seller_item_code = $this->get_tlscp_meta($product_id, '_tlscp_seller_item_code', false);
+        if (!$product_code) {
+            return array('success' => false, 'message' => 'ProductCode برای این محصول تنظیم نشده است.');
+        }
+        if (!$seller_item_code) {
+            return array('success' => false, 'message' => 'SellerItemCode برای این محصول/تنوع تنظیم نشده است.');
+        }
+        $result = $this->api->product_items($product_code);
+        if (!$result['success']) {
+            return array('success' => false, 'message' => $result['message']);
+        }
+        $items = (isset($result['data']['data']) && is_array($result['data']['data'])) ? $result['data']['data'] : array();
+        foreach ($items as $item) {
+            if (isset($item['code']) && (string) $item['code'] === (string) $seller_item_code) {
+                $this->store_item_snapshot_meta($product_id, $item);
+                return array('success' => true, 'item' => $item);
+            }
+        }
+        return array('success' => false, 'message' => 'این SellerItemCode در لیست تنوع‌های تکنولایف یافت نشد.');
+    }
+
+    /**
+     * ذخیره‌ی فیلدهای مهم تنوع (بای‌باکس، موجودی، در فرایند فروش...) در متای محصول.
+     */
+    public function store_item_snapshot_meta($product_id, $item) {
+        if (!is_array($item)) { return; }
+        $cash_price = (isset($item['cash']) && is_array($item['cash']) && isset($item['cash']['price'])) ? (float) $item['cash']['price'] : null;
+        update_post_meta($product_id, '_tlscp_buybox_winner', !empty($item['isWinnerOfBuyBox']) ? 'yes' : 'no');
+        if (isset($item['buyBoxWinnerPrice'])) {
+            update_post_meta($product_id, '_tlscp_buybox_price', (float) $item['buyBoxWinnerPrice']);
+        }
+        if ($cash_price !== null) {
+            update_post_meta($product_id, '_tlscp_remote_cash_price', $cash_price);
+        }
+        foreach (array('stock', 'available', 'processingCount', 'waitingCount', 'waitingForPaymentCount', 'refundCount') as $f) {
+            if (isset($item[$f])) {
+                update_post_meta($product_id, '_tlscp_rt_' . $f, (int) $item[$f]);
+            }
+        }
+        update_post_meta($product_id, '_tlscp_rt_updated', current_time('mysql'));
+    }
+
+    /**
+     * اسکن بای‌باکس برای محصولات متصل و علامت‌گذاری «بازنده‌ها».
+     */
+    public function scan_buybox($limit = 100) {
+        $query = new WP_Query(array(
+            'post_type' => array('product', 'product_variation'),
+            'post_status' => array('publish', 'draft', 'private'),
+            'posts_per_page' => max(1, min(300, absint($limit))),
+            'meta_query' => array(
+                array('key' => '_tlscp_enabled', 'value' => 'yes'),
+                array('key' => '_tlscp_seller_item_code', 'value' => '', 'compare' => '!='),
+            ),
+            'fields' => 'ids',
+            'no_found_rows' => true,
+        ));
+        $stats = array('scanned' => 0, 'winners' => 0, 'losers' => 0, 'failed' => 0, 'losers_list' => array());
+        foreach ($query->posts as $product_id) {
+            $info = $this->live_item_info($product_id);
+            if (empty($info['success'])) { $stats['failed']++; continue; }
+            $stats['scanned']++;
+            $item = $info['item'];
+            $is_winner = !empty($item['isWinnerOfBuyBox']);
+            if ($is_winner) {
+                $stats['winners']++;
+            } else {
+                $stats['losers']++;
+                $my = (isset($item['cash']['price'])) ? (float) $item['cash']['price'] : null;
+                $win = isset($item['buyBoxWinnerPrice']) ? (float) $item['buyBoxWinnerPrice'] : null;
+                $stats['losers_list'][] = array(
+                    'product_id' => $product_id,
+                    'title' => get_the_title($product_id),
+                    'seller_item_code' => isset($item['code']) ? $item['code'] : '',
+                    'my_price' => $my,
+                    'winner_price' => $win,
+                    'gap' => ($my !== null && $win !== null) ? ($my - $win) : null,
+                );
+            }
+        }
+        return $stats;
     }
 
     public function retry_log($log_id) {

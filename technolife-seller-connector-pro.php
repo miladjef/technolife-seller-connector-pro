@@ -1,10 +1,10 @@
 <?php
 /**
  * Plugin Name: Technolife Seller Connector Pro for WooCommerce
-* Plugin URI: https://miladjafarigavzan.ir/
+ * Plugin URI: https://example.com/
  * Description: اتصال حرفه‌ای ووکامرس به Seller API تکنولایف: قیمت‌گذاری هوشمند، موجودی، سفارش‌ها، پروموشن، لاگ و خروجی اکسل/CSV.
- * Version: 1.0.1
- * Author: Milad Jafari Gavzan
+ * Version: 1.2.0
+ * Author: Milad Jafari
  * Text Domain: tlscp
  * Domain Path: /languages
  * Requires at least: 6.0
@@ -16,7 +16,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('TLSCP_VERSION', '1.1.0');
+define('TLSCP_VERSION', '1.2.0');
 define('TLSCP_PLUGIN_FILE', __FILE__);
 define('TLSCP_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('TLSCP_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -27,6 +27,7 @@ require_once TLSCP_PLUGIN_DIR . 'includes/class-tlscp-logger.php';
 require_once TLSCP_PLUGIN_DIR . 'includes/class-tlscp-crypto.php';
 require_once TLSCP_PLUGIN_DIR . 'includes/class-tlscp-api-client.php';
 require_once TLSCP_PLUGIN_DIR . 'includes/class-tlscp-pricing.php';
+require_once TLSCP_PLUGIN_DIR . 'includes/class-tlscp-promotions.php';
 require_once TLSCP_PLUGIN_DIR . 'includes/class-tlscp-product-meta.php';
 require_once TLSCP_PLUGIN_DIR . 'includes/class-tlscp-sync.php';
 require_once TLSCP_PLUGIN_DIR . 'includes/class-tlscp-orders.php';
@@ -39,6 +40,7 @@ final class TLSCP_Plugin {
     public $logger;
     public $api;
     public $pricing;
+    public $promotions;
     public $sync;
     public $orders;
     public $admin;
@@ -52,13 +54,14 @@ final class TLSCP_Plugin {
     }
 
     private function __construct() {
-        $this->logger  = new TLSCP_Logger();
-        $this->api     = new TLSCP_API_Client($this->logger);
-        $this->pricing = new TLSCP_Pricing();
-        $this->sync    = new TLSCP_Sync($this->api, $this->pricing, $this->logger);
-        $this->orders  = new TLSCP_Orders($this->api, $this->logger);
-        $this->admin   = new TLSCP_Admin($this->api, $this->sync, $this->orders, $this->pricing, $this->logger);
-        $this->cron    = new TLSCP_Cron($this->sync, $this->orders);
+        $this->logger     = new TLSCP_Logger();
+        $this->api        = new TLSCP_API_Client($this->logger);
+        $this->pricing    = new TLSCP_Pricing();
+        $this->promotions = new TLSCP_Promotions($this->api, $this->pricing, $this->logger);
+        $this->sync       = new TLSCP_Sync($this->api, $this->pricing, $this->logger);
+        $this->orders     = new TLSCP_Orders($this->api, $this->logger);
+        $this->admin      = new TLSCP_Admin($this->api, $this->sync, $this->orders, $this->pricing, $this->logger, $this->promotions);
+        $this->cron       = new TLSCP_Cron($this->sync, $this->orders);
 
         add_action('plugins_loaded', array($this, 'init'));
         add_action('admin_notices', array($this, 'dependency_notice'));
