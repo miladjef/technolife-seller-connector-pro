@@ -1,7 +1,7 @@
 <?php
 /**
  * Plugin Name: Technolife Seller Connector Pro for WooCommerce
- * Plugin URI: https://example.com/
+ * Plugin URI: https://miladjafarigavzan.com/
  * Description: اتصال حرفه‌ای ووکامرس به Seller API تکنولایف: قیمت‌گذاری هوشمند، موجودی، سفارش‌ها، پروموشن، لاگ و خروجی اکسل/CSV.
  * Version: 1.2.0
  * Author: Milad Jafari
