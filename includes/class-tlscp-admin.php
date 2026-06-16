@@ -8,14 +8,18 @@ class TLSCP_Admin {
     private $pricing;
     private $logger;
     private $promotions;
+    private $catalog;
+    private $queue;
 
-    public function __construct($api, $sync, $orders, $pricing, $logger, $promotions = null) {
+    public function __construct($api, $sync, $orders, $pricing, $logger, $promotions = null, $catalog = null, $queue = null) {
         $this->api = $api;
         $this->sync = $sync;
         $this->orders = $orders;
         $this->pricing = $pricing;
         $this->logger = $logger;
         $this->promotions = $promotions;
+        $this->catalog = $catalog;
+        $this->queue = $queue;
     }
 
     public function init() {
@@ -39,6 +43,17 @@ class TLSCP_Admin {
         add_action('wp_ajax_tlscp_promo_apply', array($this, 'ajax_promo_apply'));
         add_action('wp_ajax_tlscp_var_options', array($this, 'ajax_var_options'));
         add_action('wp_ajax_tlscp_create_variation', array($this, 'ajax_create_variation'));
+        // امکانات نسخه ۱.۳
+        add_action('wp_ajax_tlscp_catalog_browse', array($this, 'ajax_catalog_browse'));
+        add_action('wp_ajax_tlscp_catalog_link', array($this, 'ajax_catalog_link'));
+        add_action('wp_ajax_tlscp_price_preview', array($this, 'ajax_price_preview'));
+        add_action('wp_ajax_tlscp_toggle_hide', array($this, 'ajax_toggle_hide'));
+        add_action('wp_ajax_tlscp_queue_sync', array($this, 'ajax_queue_sync'));
+
+        // Bulk actions روی جدول محصولات
+        add_filter('bulk_actions-edit-product', array($this, 'register_bulk_actions'));
+        add_filter('handle_bulk_actions-edit-product', array($this, 'handle_bulk_actions'), 10, 3);
+        add_action('admin_notices', array($this, 'bulk_action_notice'));
     }
 
     public function menu() {
@@ -47,10 +62,12 @@ class TLSCP_Admin {
         add_submenu_page('tlscp-dashboard', 'تنظیمات اتصال', 'تنظیمات اتصال', 'manage_woocommerce', 'tlscp-settings', array($this, 'page_settings'));
         add_submenu_page('tlscp-dashboard', 'قوانین قیمت‌گذاری', 'قوانین قیمت‌گذاری', 'manage_woocommerce', 'tlscp-pricing', array($this, 'page_pricing'));
         add_submenu_page('tlscp-dashboard', 'محصولات', 'محصولات', 'manage_woocommerce', 'tlscp-products', array($this, 'page_products'));
+        add_submenu_page('tlscp-dashboard', 'مرورگر کاتالوگ', 'مرورگر کاتالوگ', 'manage_woocommerce', 'tlscp-catalog', array($this, 'page_catalog'));
         add_submenu_page('tlscp-dashboard', 'بای‌باکس', 'بای‌باکس', 'manage_woocommerce', 'tlscp-buybox', array($this, 'page_buybox'));
         add_submenu_page('tlscp-dashboard', 'پروموشن و تخفیف', 'پروموشن و تخفیف', 'manage_woocommerce', 'tlscp-promotions', array($this, 'page_promotions'));
         add_submenu_page('tlscp-dashboard', 'ساخت تنوع', 'ساخت تنوع', 'manage_woocommerce', 'tlscp-tools', array($this, 'page_tools'));
         add_submenu_page('tlscp-dashboard', 'سفارش‌ها', 'سفارش‌ها', 'manage_woocommerce', 'tlscp-orders', array($this, 'page_orders'));
+        add_submenu_page('tlscp-dashboard', 'تشخیص سلامت', 'تشخیص سلامت', 'manage_woocommerce', 'tlscp-health', array($this, 'page_health'));
         add_submenu_page('tlscp-dashboard', 'لاگ و خطایابی', 'لاگ و خطایابی', 'manage_woocommerce', 'tlscp-logs', array($this, 'page_logs'));
     }
 
@@ -72,7 +89,7 @@ class TLSCP_Admin {
 
     private function header($title) {
         echo '<div class="wrap tlscp-wrap" dir="rtl"><h1>' . esc_html($title) . '</h1>';
-        echo '<div class="tlscp-tabs"><a href="' . esc_url(admin_url('admin.php?page=tlscp-dashboard')) . '">داشبورد</a><a href="' . esc_url(admin_url('admin.php?page=tlscp-settings')) . '">اتصال</a><a href="' . esc_url(admin_url('admin.php?page=tlscp-pricing')) . '">قیمت‌گذاری</a><a href="' . esc_url(admin_url('admin.php?page=tlscp-products')) . '">محصولات</a><a href="' . esc_url(admin_url('admin.php?page=tlscp-buybox')) . '">بای‌باکس</a><a href="' . esc_url(admin_url('admin.php?page=tlscp-promotions')) . '">پروموشن</a><a href="' . esc_url(admin_url('admin.php?page=tlscp-tools')) . '">ساخت تنوع</a><a href="' . esc_url(admin_url('admin.php?page=tlscp-orders')) . '">سفارش‌ها</a><a href="' . esc_url(admin_url('admin.php?page=tlscp-logs')) . '">لاگ‌ها</a></div>';
+        echo '<div class="tlscp-tabs"><a href="' . esc_url(admin_url('admin.php?page=tlscp-dashboard')) . '">داشبورد</a><a href="' . esc_url(admin_url('admin.php?page=tlscp-settings')) . '">اتصال</a><a href="' . esc_url(admin_url('admin.php?page=tlscp-pricing')) . '">قیمت‌گذاری</a><a href="' . esc_url(admin_url('admin.php?page=tlscp-products')) . '">محصولات</a><a href="' . esc_url(admin_url('admin.php?page=tlscp-catalog')) . '">کاتالوگ</a><a href="' . esc_url(admin_url('admin.php?page=tlscp-buybox')) . '">بای‌باکس</a><a href="' . esc_url(admin_url('admin.php?page=tlscp-promotions')) . '">پروموشن</a><a href="' . esc_url(admin_url('admin.php?page=tlscp-tools')) . '">ساخت تنوع</a><a href="' . esc_url(admin_url('admin.php?page=tlscp-orders')) . '">سفارش‌ها</a><a href="' . esc_url(admin_url('admin.php?page=tlscp-logs')) . '">لاگ‌ها</a><a href="' . esc_url(admin_url('admin.php?page=tlscp-health')) . '">سلامت</a></div>';
     }
 
     private function footer() { echo '</div>'; }
@@ -111,11 +128,12 @@ class TLSCP_Admin {
                 <table class="form-table" role="presentation">
                     <tr><th>Base URL</th><td><input type="url" class="regular-text ltr" name="api_base_url" value="<?php echo esc_attr($opts['api_base_url']); ?>"></td></tr>
                     <tr><th>API Key</th><td><input type="password" class="regular-text ltr" name="api_key" value="<?php echo esc_attr($opts['api_key']); ?>" autocomplete="new-password"><p class="description">بدون عبارت Bearer وارد کنید.</p></td></tr>
-                    <tr><th>Secret Key</th><td><input type="password" class="regular-text ltr" name="secret_key" value="<?php echo esc_attr($opts['secret_key']); ?>" autocomplete="new-password"><?php
-                        if (!empty($opts['secret_key'])) {
-                            $klen = TLSCP_Crypto::decoded_key_length($opts['secret_key'], $opts['secret_is_base64'] === 'yes');
+                    <tr><th>Secret Key</th><td><input type="password" class="regular-text ltr" name="secret_key" value="" placeholder="<?php echo TLSCP_Crypto::reveal_secret($opts) !== '' ? '•••••• (برای تغییر، مقدار جدید وارد کنید)' : ''; ?>" autocomplete="new-password"><?php
+                        $secret_plain = TLSCP_Crypto::reveal_secret($opts);
+                        if ($secret_plain !== '') {
+                            $klen = TLSCP_Crypto::decoded_key_length($secret_plain, $opts['secret_is_base64'] === 'yes');
                             if ($klen === 16) {
-                                echo '<p class="description" style="color:#006b2d">✔ کلید معتبر است (۱۶ بایت، مناسب AES-128).</p>';
+                                echo '<p class="description" style="color:#006b2d">✔ کلید معتبر است (۱۶ بایت، مناسب AES-128) و در دیتابیس رمزنگاری شده است.</p>';
                             } elseif ($klen === -1) {
                                 echo '<p class="description" style="color:#b42318">✖ مقدار Secret یک Base64 معتبر نیست. تیک «Base64 است؟» را بررسی کنید.</p>';
                             } else {
@@ -169,7 +187,27 @@ class TLSCP_Admin {
                     <?php endif; ?>
                     <tr><th>کاهش موجودی بعد از ساخت سفارش</th><td><label><input type="checkbox" name="reduce_stock_on_import" value="yes" <?php checked($opts['reduce_stock_on_import'], 'yes'); ?>> موجودی ووکامرس برای سفارش‌های جدید تکنولایف کاهش داده شود</label></td></tr>
                     <tr><th>همگام‌سازی هنگام ذخیره محصول</th><td><label><input type="checkbox" name="auto_sync_on_save" value="yes" <?php checked($opts['auto_sync_on_save'], 'yes'); ?>> بعد از ذخیره محصول، قیمت و موجودی به تکنولایف ارسال شود</label></td></tr>
-                    <tr><th>کران خودکار</th><td><label><input type="checkbox" name="cron_enabled" value="yes" <?php checked($opts['cron_enabled'], 'yes'); ?>> فعال</label> &nbsp; <label><input type="checkbox" name="cron_sync_inventory" value="yes" <?php checked($opts['cron_sync_inventory'], 'yes'); ?>> موجودی</label> &nbsp; <label><input type="checkbox" name="cron_sync_prices" value="yes" <?php checked($opts['cron_sync_prices'], 'yes'); ?>> قیمت</label> &nbsp; <label><input type="checkbox" name="cron_import_orders" value="yes" <?php checked($opts['cron_import_orders'], 'yes'); ?>> سفارش</label></td></tr>
+                    <tr><th>کران خودکار</th><td><label><input type="checkbox" name="cron_enabled" value="yes" <?php checked($opts['cron_enabled'], 'yes'); ?>> فعال</label> &nbsp; <label><input type="checkbox" name="cron_sync_inventory" value="yes" <?php checked($opts['cron_sync_inventory'], 'yes'); ?>> موجودی</label> &nbsp; <label><input type="checkbox" name="cron_sync_prices" value="yes" <?php checked($opts['cron_sync_prices'], 'yes'); ?>> قیمت</label> &nbsp; <label><input type="checkbox" name="cron_import_orders" value="yes" <?php checked($opts['cron_import_orders'], 'yes'); ?>> سفارش</label> &nbsp; <label><input type="checkbox" name="cron_scan_buybox" value="yes" <?php checked($opts['cron_scan_buybox'], 'yes'); ?>> اسکن بای‌باکس</label></td></tr>
+                </table>
+            </div>
+            <div class="tlscp-panel"><h2>پیشرفته و پایداری</h2>
+                <table class="form-table" role="presentation">
+                    <tr><th>تشخیص تغییر (Idempotency)</th><td><label><input type="checkbox" name="idempotent_sync" value="yes" <?php checked($opts['idempotent_sync'], 'yes'); ?>> فقط در صورت تغییر قیمت/موجودی به API ارسال شود (کاهش فراخوانی)</label></td></tr>
+                    <tr><th>پردازش پس‌زمینه</th><td><label><input type="checkbox" name="use_action_scheduler" value="yes" <?php checked($opts['use_action_scheduler'], 'yes'); ?>> استفاده از Action Scheduler برای صف‌بندی per-product (مناسب کاتالوگ بزرگ)</label><p class="description">در صورت نبود Action Scheduler، به‌صورت خودکار به wp-cron برمی‌گردد.</p></td></tr>
+                    <tr><th>همگام‌سازی لحظه‌ای</th><td><label><input type="checkbox" name="realtime_sync" value="yes" <?php checked($opts['realtime_sync'], 'yes'); ?>> با تغییر موجودی/قیمت محصول، بلافاصله یک job پس‌زمینه صف شود</label></td></tr>
+                    <tr><th>فاصله بین درخواست‌ها</th><td><input type="number" min="0" name="request_throttle_ms" value="<?php echo esc_attr($opts['request_throttle_ms']); ?>" style="width:90px"> میلی‌ثانیه &nbsp; | &nbsp; حداکثر تلاش مجدد: <input type="number" min="0" max="5" name="request_max_retries" value="<?php echo esc_attr($opts['request_max_retries']); ?>" style="width:60px"> <span class="description">backoff نمایی روی خطای 429/5xx</span></td></tr>
+                </table>
+            </div>
+            <div class="tlscp-panel"><h2>اعلان‌ها</h2>
+                <table class="form-table" role="presentation">
+                    <tr><th>ایمیل دریافت اعلان</th><td><input type="email" class="regular-text ltr" name="notify_email" value="<?php echo esc_attr($opts['notify_email']); ?>" placeholder="<?php echo esc_attr(get_option('admin_email')); ?>"></td></tr>
+                    <tr><th>هشدار باخت بای‌باکس</th><td><label><input type="checkbox" name="notify_buybox_loss" value="yes" <?php checked($opts['notify_buybox_loss'], 'yes'); ?>> هنگام اسکن خودکار، اگر بازنده‌ای بود ایمیل ارسال شود</label></td></tr>
+                    <tr><th>آستانه‌ی هشدار خطا</th><td><input type="number" min="0" name="notify_error_threshold" value="<?php echo esc_attr($opts['notify_error_threshold']); ?>" style="width:80px"> <span class="description">اگر تعداد خطاهای اخیر از این مقدار بیشتر شد، ایمیل ارسال شود (۰ = غیرفعال)</span></td></tr>
+                </table>
+            </div>
+            <div class="tlscp-panel"><h2>حذف افزونه</h2>
+                <table class="form-table" role="presentation">
+                    <tr><th>پاک‌سازی هنگام حذف</th><td><label><input type="checkbox" name="remove_data_on_uninstall" value="yes" <?php checked($opts['remove_data_on_uninstall'], 'yes'); ?>> هنگام حذف افزونه، جدول‌ها، تنظیمات و متاها پاک شوند</label></td></tr>
                 </table>
             </div>
             <?php submit_button('ذخیره تنظیمات'); ?>
@@ -190,6 +228,17 @@ class TLSCP_Admin {
                 <table class="form-table" role="presentation">
                     <tr><th>درصد افزایش کلی</th><td><input type="number" step="0.01" name="global_markup_percent" value="<?php echo esc_attr($opts['global_markup_percent']); ?>"> ٪</td></tr>
                     <tr><th>واحد قیمت فروشگاه</th><td><select name="price_unit"><option value="rial" <?php selected($opts['price_unit'], 'rial'); ?>>ریال (بدون تبدیل)</option><option value="toman" <?php selected($opts['price_unit'], 'toman'); ?>>تومان (در ۱۰ ضرب شود)</option></select><p class="description">تکنولایف قیمت‌ها را به <strong>ریال</strong> می‌خواهد. اگر قیمت محصولات ووکامرس شما به تومان است، این گزینه را روی «تومان» بگذارید تا قیمت‌ها ۱۰ برابر و هم‌واحدِ بازه‌ی مجاز تکنولایف شوند.</p></td></tr>
+                    <tr><th>مبنای قیمت</th><td><select name="price_basis"><option value="wc" <?php selected($opts['price_basis'], 'wc'); ?>>قیمت ووکامرس</option><option value="reference" <?php selected($opts['price_basis'], 'reference'); ?>>قیمت مرجع تکنولایف (referencePrice)</option></select> &nbsp; درصد روی مرجع: <input type="number" step="0.01" name="reference_markup_percent" value="<?php echo esc_attr($opts['reference_markup_percent']); ?>" style="width:80px"> ٪ <p class="description">با انتخاب «قیمت مرجع»، قیمت بر اساس referencePrice تکنولایف + این درصد محاسبه می‌شود (اگر مرجع موجود نباشد به قیمت ووکامرس برمی‌گردد).</p></td></tr>
+                    <tr><th>کنترل بازه اقساطی/اعتباری</th><td><label><input type="checkbox" name="enforce_leasing_range" value="yes" <?php checked($opts['enforce_leasing_range'], 'yes'); ?>> اعمال بازه‌ی مجاز روی قیمت اقساطی</label><br><label><input type="checkbox" name="enforce_bnpl_range" value="yes" <?php checked($opts['enforce_bnpl_range'], 'yes'); ?>> اعمال بازه‌ی مجاز روی قیمت اعتباری</label><p class="description">قیمت‌های خارج از بازه ارسال نمی‌شوند تا از رد شدن بی‌صدا جلوگیری شود.</p></td></tr>
+                    <tr><th>قیمت‌گذاری رقابتی بای‌باکس</th><td>
+                        <label><input type="checkbox" name="competitive_repricing" value="yes" <?php checked($opts['competitive_repricing'], 'yes'); ?>> فعال (فقط وقتی بای‌باکس را باخته‌ایم، قیمت کمی زیر برنده تنظیم می‌شود)</label>
+                        <p>میزان کاهش از قیمت برنده:
+                            <select name="competitive_undercut_type"><option value="amount" <?php selected($opts['competitive_undercut_type'], 'amount'); ?>>مبلغ (ریال)</option><option value="percent" <?php selected($opts['competitive_undercut_type'], 'percent'); ?>>درصد</option></select>
+                            <input type="number" step="0.01" min="0" name="competitive_undercut_value" value="<?php echo esc_attr($opts['competitive_undercut_value']); ?>" style="width:100px">
+                        </p>
+                        <p>حداکثر کاهش مجاز از قیمت نرمال (کف حاشیه سود): <input type="number" step="0.01" min="0" name="competitive_min_margin_percent" value="<?php echo esc_attr($opts['competitive_min_margin_percent']); ?>" style="width:80px"> ٪</p>
+                        <p class="description">قیمت هرگز پایین‌تر از کفِ مجاز API و کفِ حاشیه‌ی سود شما نمی‌رود.</p>
+                    </td></tr>
                     <tr><th>قیمت مبنا</th><td><select name="price_source"><option value="sale_or_regular" <?php selected($opts['price_source'], 'sale_or_regular'); ?>>فروش ویژه؛ اگر نبود قیمت عادی</option><option value="regular" <?php selected($opts['price_source'], 'regular'); ?>>قیمت عادی</option><option value="current" <?php selected($opts['price_source'], 'current'); ?>>قیمت فعلی ووکامرس</option></select></td></tr>
                     <tr><th>نحوه اعمال دسته‌بندی</th><td><select name="category_strategy"><option value="replace_global" <?php selected($opts['category_strategy'], 'replace_global'); ?>>درصد دسته‌بندی جایگزین درصد کلی شود</option><option value="add_to_global" <?php selected($opts['category_strategy'], 'add_to_global'); ?>>درصد دسته‌بندی با درصد کلی جمع شود</option></select></td></tr>
                     <tr><th>اگر محصول چند دسته داشت</th><td><select name="multi_category_strategy"><option value="highest" <?php selected($opts['multi_category_strategy'], 'highest'); ?>>بیشترین درصد</option><option value="lowest" <?php selected($opts['multi_category_strategy'], 'lowest'); ?>>کمترین درصد</option></select></td></tr>
@@ -239,14 +288,44 @@ class TLSCP_Admin {
 
     public function page_logs() {
         $this->header('لاگ و خطایابی');
-        $logs = $this->logger->recent(100);
+        $f_action = isset($_GET['lact']) ? sanitize_text_field(wp_unslash($_GET['lact'])) : '';
+        $f_success = isset($_GET['lsucc']) ? sanitize_text_field(wp_unslash($_GET['lsucc'])) : '';
+        $f_search = isset($_GET['ls']) ? sanitize_text_field(wp_unslash($_GET['ls'])) : '';
+        $page = isset($_GET['lp']) ? max(1, absint($_GET['lp'])) : 1;
+        $res = $this->logger->query(array('action' => $f_action, 'success' => $f_success, 'search' => $f_search, 'per_page' => 30, 'page' => $page));
+        $logs = $res['rows'];
+        $actions = $this->logger->distinct_actions();
         ?>
-        <p><a class="button" href="<?php echo esc_url(wp_nonce_url(admin_url('admin-post.php?action=tlscp_export_logs'), 'tlscp_export_logs')); ?>">خروجی اکسل/CSV لاگ‌ها</a></p>
+        <form method="get" class="tlscp-panel" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <input type="hidden" name="page" value="tlscp-logs">
+            <select name="lact"><option value="">همه عملیات</option><?php foreach ($actions as $a): ?><option value="<?php echo esc_attr($a); ?>" <?php selected($f_action, $a); ?>><?php echo esc_html($a); ?></option><?php endforeach; ?></select>
+            <select name="lsucc"><option value="">همه وضعیت‌ها</option><option value="1" <?php selected($f_success, '1'); ?>>موفق</option><option value="0" <?php selected($f_success, '0'); ?>>ناموفق</option></select>
+            <input type="search" name="ls" value="<?php echo esc_attr($f_search); ?>" placeholder="جستجو در endpoint/پیام/کد">
+            <button class="button">فیلتر</button>
+            <a class="button" href="<?php echo esc_url(wp_nonce_url(admin_url('admin-post.php?action=tlscp_export_logs'), 'tlscp_export_logs')); ?>">خروجی CSV</a>
+            <span class="description">مجموع: <?php echo esc_html($res['total']); ?></span>
+        </form>
         <table class="widefat striped"><thead><tr><th>ID</th><th>زمان</th><th>عملیات</th><th>Endpoint</th><th>HTTP</th><th>وضعیت</th><th>پیام</th><th>تکرار</th></tr></thead><tbody>
         <?php foreach ($logs as $log): ?>
-            <tr><td><?php echo esc_html($log['id']); ?></td><td><?php echo esc_html($log['created_at']); ?></td><td><?php echo esc_html($log['action']); ?></td><td class="ltr"><?php echo esc_html($log['method'] . ' ' . $log['endpoint']); ?></td><td><?php echo esc_html($log['http_status']); ?></td><td><?php echo $log['success'] ? '<span class="tlscp-badge tlscp-ok">موفق</span>' : '<span class="tlscp-badge tlscp-error">ناموفق</span>'; ?></td><td><?php echo esc_html($log['message']); ?></td><td><?php if (!$log['success'] && $log['retry_payload']) : ?><button class="button tlscp-retry-log" data-log-id="<?php echo esc_attr($log['id']); ?>">اجرای مجدد</button><?php else: ?>-<?php endif; ?></td></tr>
+            <tr><td><?php echo esc_html($log['id']); ?></td><td class="ltr"><?php echo esc_html($log['created_at']); ?></td><td><?php echo esc_html($log['action']); ?></td><td class="ltr"><?php echo esc_html($log['method'] . ' ' . $log['endpoint']); ?></td><td><?php echo esc_html($log['http_status']); ?></td><td><?php echo $log['success'] ? '<span class="tlscp-badge tlscp-ok">موفق</span>' : '<span class="tlscp-badge tlscp-error">ناموفق</span>'; ?></td><td><?php echo esc_html($log['message']); ?></td><td><?php if (!$log['success'] && $log['retry_payload']) : ?><button class="button tlscp-retry-log" data-log-id="<?php echo esc_attr($log['id']); ?>">اجرای مجدد</button><?php else: ?>-<?php endif; ?></td></tr>
         <?php endforeach; ?>
-        </tbody></table><div id="tlscp-ajax-result"></div>
+        <?php if (empty($logs)): ?><tr><td colspan="8">رکوردی یافت نشد.</td></tr><?php endif; ?>
+        </tbody></table>
+        <?php
+        if ($res['pages'] > 1) {
+            $base = add_query_arg(array('page' => 'tlscp-logs', 'lact' => $f_action, 'lsucc' => $f_success, 'ls' => $f_search), admin_url('admin.php'));
+            echo '<p class="tlscp-pager">';
+            for ($i = 1; $i <= $res['pages']; $i++) {
+                if ($i == $res['page']) {
+                    echo '<strong>' . esc_html($i) . '</strong> ';
+                } else {
+                    echo '<a href="' . esc_url(add_query_arg('lp', $i, $base)) . '">' . esc_html($i) . '</a> ';
+                }
+            }
+            echo '</p>';
+        }
+        ?>
+        <div id="tlscp-ajax-result"></div>
         <?php $this->footer();
     }
 
@@ -331,22 +410,110 @@ class TLSCP_Admin {
         <?php $this->footer();
     }
 
+    public function page_catalog() {
+        $this->header('مرورگر کاتالوگ تکنولایف');
+        ?>
+        <div class="tlscp-panel">
+            <p>کاتالوگ فروشنده را از تکنولایف مرور کنید و محصولات را با ووکامرس تطبیق دهید. سیستم بر اساس SKU (= ProductCode) و سپس نام، محصول ووکامرس متناظر را پیشنهاد می‌دهد.</p>
+            <input type="text" class="regular-text" id="tlscp-cat-search" placeholder="جستجو (اختیاری)">
+            <button class="button" id="tlscp-cat-load">بارگذاری کاتالوگ</button>
+            <span id="tlscp-cat-pager"></span>
+            <div id="tlscp-cat-result"></div>
+        </div>
+        <?php $this->footer();
+    }
+
+    public function page_health() {
+        $this->header('تشخیص سلامت');
+        $opts = $this->opts();
+        $secret_plain = TLSCP_Crypto::reveal_secret($opts);
+        $key_len = $secret_plain !== '' ? TLSCP_Crypto::decoded_key_length($secret_plain, $opts['secret_is_base64'] === 'yes') : 0;
+        $stored_secret = isset($opts['secret_key']) ? (string) $opts['secret_key'] : '';
+        $is_encrypted = strpos($stored_secret, 'enc::') === 0;
+        $checks = array(
+            array('OpenSSL در PHP', function_exists('openssl_encrypt'), function_exists('openssl_encrypt') ? 'فعال' : 'غیرفعال'),
+            array('WooCommerce', class_exists('WooCommerce'), class_exists('WooCommerce') ? (defined('WC_VERSION') ? WC_VERSION : 'فعال') : 'نصب نیست'),
+            array('کلید API', !empty($opts['api_key']), !empty($opts['api_key']) ? 'تنظیم شده' : 'خالی'),
+            array('Secret (۱۶ بایت)', $key_len === 16, $key_len === 16 ? 'معتبر' : ('نامعتبر: ' . $key_len . ' بایت')),
+            array('رمزنگاری Secret در DB', $is_encrypted, $is_encrypted ? 'رمزنگاری‌شده' : 'متن ساده (legacy)'),
+            array('Action Scheduler', function_exists('as_enqueue_async_action'), function_exists('as_enqueue_async_action') ? 'در دسترس' : 'در دسترس نیست (fallback به wp-cron)'),
+            array('کران ۱۵ دقیقه‌ای', (bool) wp_next_scheduled('tlscp_cron_sync'), wp_next_scheduled('tlscp_cron_sync') ? wp_date('Y-m-d H:i', wp_next_scheduled('tlscp_cron_sync')) : 'زمان‌بندی نشده'),
+            array('کران فعال', $opts['cron_enabled'] === 'yes', $opts['cron_enabled'] === 'yes' ? 'بله' : 'خیر'),
+        );
+        ?>
+        <div class="tlscp-panel">
+            <table class="widefat striped"><thead><tr><th>بررسی</th><th>وضعیت</th><th>جزئیات</th></tr></thead><tbody>
+            <?php foreach ($checks as $c): ?>
+                <tr><td><?php echo esc_html($c[0]); ?></td><td><?php echo $c[1] ? '<span class="tlscp-badge tlscp-ok">سالم</span>' : '<span class="tlscp-badge tlscp-error">بررسی شود</span>'; ?></td><td class="ltr"><?php echo esc_html($c[2]); ?></td></tr>
+            <?php endforeach; ?>
+            </tbody></table>
+            <p>
+                <button class="button" id="tlscp-test-connection">تست اتصال API</button>
+                <button class="button" id="tlscp-queue-sync">صف‌بندی همگام‌سازی کامل (پس‌زمینه)</button>
+            </p>
+            <div id="tlscp-ajax-result"></div>
+        </div>
+        <?php $this->footer();
+    }
+
+    // ---- Bulk actions ----
+    public function register_bulk_actions($actions) {
+        $actions['tlscp_bulk_connect'] = 'تکنولایف: اتصال (با SKU)';
+        $actions['tlscp_bulk_sync'] = 'تکنولایف: همگام‌سازی قیمت و موجودی';
+        $actions['tlscp_bulk_hide'] = 'تکنولایف: مخفی‌کردن';
+        $actions['tlscp_bulk_show'] = 'تکنولایف: نمایش';
+        return $actions;
+    }
+
+    public function handle_bulk_actions($redirect, $action, $ids) {
+        if (strpos($action, 'tlscp_bulk_') !== 0) { return $redirect; }
+        $ids = array_map('absint', (array) $ids);
+        $done = 0;
+        foreach ($ids as $pid) {
+            if ($action === 'tlscp_bulk_connect') {
+                $product = wc_get_product($pid);
+                $sku = $product ? $product->get_sku() : '';
+                if ($sku) { update_post_meta($pid, '_tlscp_product_code', $sku); update_post_meta($pid, '_tlscp_enabled', 'yes'); $done++; }
+            } elseif ($action === 'tlscp_bulk_sync') {
+                $r = $this->sync->sync_product($pid, true); if (!empty($r['success'])) { $done++; }
+            } elseif ($action === 'tlscp_bulk_hide') {
+                $r = $this->sync->toggle_hide($pid, true); if (!empty($r['success'])) { $done++; }
+            } elseif ($action === 'tlscp_bulk_show') {
+                $r = $this->sync->toggle_hide($pid, false); if (!empty($r['success'])) { $done++; }
+            }
+        }
+        return add_query_arg('tlscp_bulk_done', $done, $redirect);
+    }
+
+    public function bulk_action_notice() {
+        if (!empty($_REQUEST['tlscp_bulk_done'])) {
+            echo '<div class="notice notice-success is-dismissible"><p>تکنولایف: عملیات روی ' . absint($_REQUEST['tlscp_bulk_done']) . ' مورد انجام شد.</p></div>';
+        }
+    }
+
     public function save_settings() {
         if (!current_user_can('manage_woocommerce')) { wp_die('دسترسی غیرمجاز'); }
         check_admin_referer('tlscp_save_settings');
         $opts = $this->opts();
         $section = isset($_POST['section']) ? sanitize_text_field(wp_unslash($_POST['section'])) : 'settings';
 
-        $text_fields = array('api_base_url','api_key','secret_key','encryption_payload_mode','global_markup_percent','price_unit','category_strategy','multi_category_strategy','price_source','rounding','out_of_range_strategy','leasing_percent','bnpl_percent','inventory_reserve','inventory_max_send','inventory_unmanaged_qty','leave_time','max_buy_per_order','orders_from_days','orders_max_pages','order_status','log_retention_days');
+        $text_fields = array('api_base_url','api_key','encryption_payload_mode','global_markup_percent','price_unit','price_basis','reference_markup_percent','category_strategy','multi_category_strategy','price_source','rounding','out_of_range_strategy','leasing_percent','bnpl_percent','competitive_undercut_type','competitive_undercut_value','competitive_min_margin_percent','request_throttle_ms','request_max_retries','inventory_reserve','inventory_max_send','inventory_unmanaged_qty','leave_time','max_buy_per_order','orders_from_days','orders_max_pages','order_status','notify_email','notify_error_threshold','log_retention_days');
         foreach ($text_fields as $f) {
             if (isset($_POST[$f])) { $opts[$f] = sanitize_text_field(wp_unslash($_POST[$f])); }
         }
+        // Secret به‌صورت رمزنگاری‌شده ذخیره می‌شود (at-rest). فقط هنگام تغییر مقدار.
+        if (isset($_POST['secret_key'])) {
+            $new_secret = trim((string) wp_unslash($_POST['secret_key']));
+            if ($new_secret !== '') {
+                $opts['secret_key'] = TLSCP_Crypto::encrypt_store($new_secret);
+            }
+        }
         if ($section === 'pricing') {
-            foreach (array('sync_leasing_bnpl') as $cb) {
+            foreach (array('sync_leasing_bnpl','enforce_leasing_range','enforce_bnpl_range','competitive_repricing') as $cb) {
                 $opts[$cb] = isset($_POST[$cb]) ? 'yes' : 'no';
             }
         } else {
-            foreach (array('secret_is_base64','auto_hide_zero_stock','auto_create_orders','cron_enabled','cron_sync_inventory','cron_sync_prices','cron_import_orders','auto_sync_on_save','reduce_stock_on_import','order_status_sync','buybox_alerts') as $cb) {
+            foreach (array('secret_is_base64','auto_hide_zero_stock','auto_create_orders','cron_enabled','cron_sync_inventory','cron_sync_prices','cron_import_orders','cron_scan_buybox','auto_sync_on_save','reduce_stock_on_import','order_status_sync','buybox_alerts','idempotent_sync','realtime_sync','use_action_scheduler','notify_buybox_loss','remove_data_on_uninstall') as $cb) {
                 $opts[$cb] = isset($_POST[$cb]) ? 'yes' : 'no';
             }
             if (isset($_POST['order_status_map']) && is_array($_POST['order_status_map'])) {
@@ -471,6 +638,49 @@ class TLSCP_Admin {
         }
         $res = $this->api->create_variation($body);
         wp_send_json(array('success' => !empty($res['success']), 'message' => $res['message'], 'status' => $res['status']));
+    }
+
+    public function ajax_catalog_browse() {
+        $this->ajax_guard();
+        if (!$this->catalog) { wp_send_json(array('success' => false, 'message' => 'سرویس کاتالوگ در دسترس نیست.')); }
+        $query = array(
+            'page' => isset($_POST['page']) ? absint($_POST['page']) : 1,
+            'limit' => 20,
+        );
+        $search = isset($_POST['search']) ? sanitize_text_field(wp_unslash($_POST['search'])) : '';
+        if ($search !== '') { $query['search'] = $search; }
+        wp_send_json($this->catalog->browse($query));
+    }
+
+    public function ajax_catalog_link() {
+        $this->ajax_guard();
+        if (!$this->catalog) { wp_send_json(array('success' => false, 'message' => 'سرویس کاتالوگ در دسترس نیست.')); }
+        $wc_id = isset($_POST['wc_product_id']) ? absint($_POST['wc_product_id']) : 0;
+        $code = isset($_POST['product_code']) ? sanitize_text_field(wp_unslash($_POST['product_code'])) : '';
+        wp_send_json($this->catalog->link($wc_id, $code));
+    }
+
+    public function ajax_price_preview() {
+        $this->ajax_guard();
+        $product_id = isset($_POST['product_id']) ? absint($_POST['product_id']) : 0;
+        if (!$product_id) { wp_send_json(array('success' => false, 'message' => 'شناسه محصول نامعتبر است.')); }
+        $remote = $this->sync->get_remote_item_info($product_id);
+        wp_send_json($this->pricing->preview($product_id, is_array($remote) ? $remote : array()));
+    }
+
+    public function ajax_toggle_hide() {
+        $this->ajax_guard();
+        $product_id = isset($_POST['product_id']) ? absint($_POST['product_id']) : 0;
+        $hide = !empty($_POST['hide']);
+        wp_send_json($this->sync->toggle_hide($product_id, $hide));
+    }
+
+    public function ajax_queue_sync() {
+        $this->ajax_guard();
+        if (!$this->queue) { wp_send_json(array('success' => false, 'message' => 'صف در دسترس نیست.')); }
+        $res = $this->queue->enqueue_full_sync(!empty($_POST['force']));
+        $res['success'] = true;
+        wp_send_json($res);
     }
 
     private function ajax_guard() {

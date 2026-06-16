@@ -46,7 +46,8 @@ class TLSCP_API_Client {
 
         $body = array_key_exists('body', $args) ? $args['body'] : null;
         $payload_for_secret = $this->secret_payload($opts, $base, $path, $url, $body, $filtered_query, $query_string);
-        $encrypted_secret = TLSCP_Crypto::encrypted_secret($opts['secret_key'], $payload_for_secret, $opts['secret_is_base64'] === 'yes');
+        $secret_plain = TLSCP_Crypto::reveal_secret($opts);
+        $encrypted_secret = TLSCP_Crypto::encrypted_secret($secret_plain, $payload_for_secret, $opts['secret_is_base64'] === 'yes');
 
         if ($encrypted_secret === '') {
             $message = 'ساخت encrypted-secret ناموفق بود. Secret Key یا OpenSSL را بررسی کنید.';
@@ -85,7 +86,27 @@ class TLSCP_API_Client {
             $request_args['body'] = wp_json_encode($body, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
         }
 
-        $response = wp_remote_request($url, $request_args);
+        // throttle اختیاری بین درخواست‌ها
+        $throttle = isset($opts['request_throttle_ms']) ? absint($opts['request_throttle_ms']) : 0;
+        if ($throttle > 0) {
+            usleep($throttle * 1000);
+        }
+
+        $max_retries = isset($opts['request_max_retries']) ? max(0, min(5, absint($opts['request_max_retries']))) : 2;
+        $attempt = 0;
+        $response = null;
+        do {
+            $response = wp_remote_request($url, $request_args);
+            $code = is_wp_error($response) ? 0 : (int) wp_remote_retrieve_response_code($response);
+            $retryable = is_wp_error($response) || $code === 429 || ($code >= 500 && $code < 600);
+            if (!$retryable || $attempt >= $max_retries) {
+                break;
+            }
+            $attempt++;
+            // backoff نمایی: 0.5s, 1s, 2s ...
+            usleep((int) (500000 * pow(2, $attempt - 1)));
+        } while (true);
+
         $status = 0;
         $decoded = null;
         $raw = '';

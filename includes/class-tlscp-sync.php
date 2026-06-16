@@ -12,17 +12,17 @@ class TLSCP_Sync {
         $this->logger = $logger;
     }
 
-    public function sync_product($product_id) {
+    public function sync_product($product_id, $force = true) {
         $product_id = absint($product_id);
         if (!$product_id || !wc_get_product($product_id)) {
             return array('success' => false, 'message' => 'محصول ووکامرس پیدا نشد.');
         }
-        $price = $this->sync_price($product_id);
-        $stock = $this->sync_inventory($product_id);
+        $price = $this->sync_price($product_id, $force);
+        $stock = $this->sync_inventory($product_id, $force);
         return array('price' => $price, 'inventory' => $stock, 'success' => (!empty($price['success']) && !empty($stock['success'])));
     }
 
-    public function sync_price($product_id) {
+    public function sync_price($product_id, $force = true) {
         $seller_item_code = $this->get_tlscp_meta($product_id, '_tlscp_seller_item_code', false);
         if (!$seller_item_code) {
             return $this->product_error($product_id, 'کد تنوع فروشنده برای محصول/تنوع تنظیم نشده است.');
@@ -34,11 +34,17 @@ class TLSCP_Sync {
             return $this->product_error($product_id, $payload_result['message']);
         }
 
+        // تشخیص تغییر: اگر payload با دفعه‌ی قبل یکی است و idempotency فعال است، ارسال نمی‌شود.
+        if (!$force && $this->is_idempotent() && $this->unchanged($product_id, '_tlscp_price_hash', $payload_result['payload'])) {
+            return array('success' => true, 'skipped' => true, 'message' => 'قیمت تغییری نکرده؛ ارسال نشد.', 'calc' => $payload_result['calc']);
+        }
+
         $retry = array('type' => 'sync_price', 'product_id' => $product_id);
         $result = $this->api->update_price($seller_item_code, $payload_result['payload'], $retry);
         if ($result['success']) {
             update_post_meta($product_id, '_tlscp_last_price', $payload_result['calc']['final_price']);
             update_post_meta($product_id, '_tlscp_last_sync', current_time('mysql'));
+            update_post_meta($product_id, '_tlscp_price_hash', $this->hash_payload($payload_result['payload']));
             delete_post_meta($product_id, '_tlscp_last_error');
         } else {
             update_post_meta($product_id, '_tlscp_last_error', $result['message']);
@@ -47,7 +53,7 @@ class TLSCP_Sync {
         return $result;
     }
 
-    public function sync_inventory($product_id) {
+    public function sync_inventory($product_id, $force = true) {
         $seller_item_code = $this->get_tlscp_meta($product_id, '_tlscp_seller_item_code', false);
         if (!$seller_item_code) {
             return $this->product_error($product_id, 'کد تنوع فروشنده برای محصول/تنوع تنظیم نشده است.');
@@ -73,11 +79,16 @@ class TLSCP_Sync {
             $body['SalesCode'] = $sales_code;
         }
 
+        if (!$force && $this->is_idempotent() && $this->unchanged($product_id, '_tlscp_stock_hash', $body)) {
+            return array('success' => true, 'skipped' => true, 'message' => 'موجودی تغییری نکرده؛ ارسال نشد.');
+        }
+
         $retry = array('type' => 'sync_inventory', 'product_id' => $product_id);
         $result = $this->api->update_inventory($seller_item_code, $body, $retry);
         if ($result['success']) {
             update_post_meta($product_id, '_tlscp_last_stock', $available);
             update_post_meta($product_id, '_tlscp_last_sync', current_time('mysql'));
+            update_post_meta($product_id, '_tlscp_stock_hash', $this->hash_payload($body));
             delete_post_meta($product_id, '_tlscp_last_error');
             if ($opts['auto_hide_zero_stock'] === 'yes') {
                 if ($available <= 0) {
@@ -94,7 +105,7 @@ class TLSCP_Sync {
         return $result;
     }
 
-    public function sync_all_connected($price = true, $inventory = true, $limit = 50) {
+    public function sync_all_connected($price = true, $inventory = true, $limit = 50, $force = false) {
         $query = new WP_Query(array(
             'post_type' => array('product', 'product_variation'),
             'post_status' => array('publish', 'draft', 'private'),
@@ -106,15 +117,45 @@ class TLSCP_Sync {
             'fields' => 'ids',
             'no_found_rows' => true,
         ));
-        $done = array('success' => 0, 'failed' => 0, 'items' => array());
+        $done = array('success' => 0, 'failed' => 0, 'skipped' => 0, 'items' => array());
         foreach ($query->posts as $product_id) {
             $result = array('success' => true);
-            if ($price) { $result = $this->sync_price($product_id); }
-            if ($inventory) { $result2 = $this->sync_inventory($product_id); $result['success'] = !empty($result['success']) && !empty($result2['success']); $result['inventory'] = $result2; }
+            if ($price) { $result = $this->sync_price($product_id, $force); }
+            if ($inventory) { $result2 = $this->sync_inventory($product_id, $force); $result['success'] = !empty($result['success']) && !empty($result2['success']); $result['inventory'] = $result2; }
+            if (!empty($result['skipped']) || (!empty($result['inventory']['skipped']) && empty($price))) { $done['skipped']++; }
             if (!empty($result['success'])) { $done['success']++; } else { $done['failed']++; }
             $done['items'][] = array('product_id' => $product_id, 'result' => $result);
         }
         return $done;
+    }
+
+    public function is_idempotent() {
+        $opts = wp_parse_args(get_option(TLSCP_OPTION_KEY, array()), TLSCP_Installer::default_options());
+        return isset($opts['idempotent_sync']) && $opts['idempotent_sync'] === 'yes';
+    }
+
+    private function hash_payload($payload) {
+        return md5(wp_json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+    }
+
+    private function unchanged($product_id, $meta_key, $payload) {
+        $prev = get_post_meta($product_id, $meta_key, true);
+        return $prev !== '' && $prev === $this->hash_payload($payload);
+    }
+
+    /**
+     * نمایش/مخفی‌کردن یک تنوع و ذخیره‌ی وضعیت.
+     */
+    public function toggle_hide($product_id, $hide = true) {
+        $seller_item_code = $this->get_tlscp_meta($product_id, '_tlscp_seller_item_code', false);
+        if (!$seller_item_code) {
+            return array('success' => false, 'message' => 'کد تنوع فروشنده تنظیم نشده است.');
+        }
+        $res = $hide ? $this->api->hide_item($seller_item_code) : $this->api->show_item($seller_item_code);
+        if (!empty($res['success'])) {
+            update_post_meta($product_id, '_tlscp_hidden', $hide ? 'yes' : 'no');
+        }
+        return array('success' => !empty($res['success']), 'message' => $res['message'], 'hidden' => $hide ? 'yes' : 'no');
     }
 
     public function get_remote_item_info($product_id) {

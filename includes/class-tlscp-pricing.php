@@ -6,7 +6,25 @@ class TLSCP_Pricing {
         return wp_parse_args(get_option(TLSCP_OPTION_KEY, array()), TLSCP_Installer::default_options());
     }
 
-    public function get_base_price($product_id) {
+    public function get_base_price($product_id, $remote_info = array()) {
+        $opts = $this->options();
+        // مبنای قیمت: قیمت مرجع تکنولایف به‌جای قیمت ووکامرس (در صورت انتخاب).
+        if (isset($opts['price_basis']) && $opts['price_basis'] === 'reference' && is_array($remote_info)) {
+            $ref = null;
+            if (isset($remote_info['referencePrice'])) {
+                $ref = (float) $remote_info['referencePrice'];
+            }
+            if ($ref !== null && $ref > 0) {
+                // قیمت مرجع به ریال است؛ آن را به واحد فروشگاه برمی‌گردانیم تا منطق ضریب واحد یکدست بماند.
+                $mult = $this->price_unit_multiplier();
+                return $mult > 0 ? ($ref / $mult) : $ref;
+            }
+            // اگر قیمت مرجع نبود، به قیمت ووکامرس برمی‌گردیم.
+        }
+        return $this->wc_base_price($product_id);
+    }
+
+    private function wc_base_price($product_id) {
         $product = wc_get_product($product_id);
         if (!$product) {
             return 0;
@@ -67,7 +85,8 @@ class TLSCP_Pricing {
     }
 
     public function calculate_price($product_id, $remote_info = array()) {
-        $base = $this->get_base_price($product_id);
+        $opts = $this->options();
+        $base = $this->get_base_price($product_id, $remote_info);
         if ($base <= 0) {
             return array(
                 'base_price' => $base,
@@ -80,7 +99,12 @@ class TLSCP_Pricing {
             );
         }
 
-        $percent = $this->calculate_markup_percent($product_id);
+        // درصد افزایش: اگر مبنا «قیمت مرجع» باشد از درصد اختصاصی مرجع استفاده می‌شود.
+        if (isset($opts['price_basis']) && $opts['price_basis'] === 'reference') {
+            $percent = (float) $opts['reference_markup_percent'];
+        } else {
+            $percent = $this->calculate_markup_percent($product_id);
+        }
         $price = $base + ($base * $percent / 100);
 
         // تبدیل به ریال: اگر واحد فروشگاه «تومان» باشد، در ۱۰ ضرب می‌شود تا با بازه‌ی ریالی تکنولایف هم‌واحد شود.
@@ -120,16 +144,124 @@ class TLSCP_Pricing {
             return array('success' => false, 'message' => $calc['range_message'], 'calc' => $calc);
         }
 
+        $cash_price = (float) $calc['final_price'];
+
+        // قیمت‌گذاری رقابتی برای بردن بای‌باکس (اختیاری، با کف امن).
+        $notes = array();
+        if (isset($opts['competitive_repricing']) && $opts['competitive_repricing'] === 'yes') {
+            $comp = $this->competitive_price($cash_price, $remote_info, $opts);
+            if ($comp['applied']) {
+                $cash_price = $comp['price'];
+                $notes[] = $comp['message'];
+            }
+        }
+
         // قیمت‌های ریالی باید عدد صحیح باشند (مطابق نمونه‌های مستند).
-        $cash = array('price' => (int) round($calc['final_price']));
-        $payload = array('cash' => $cash);
+        $payload = array('cash' => array('price' => (int) round($cash_price)));
+
         if ($opts['sync_leasing_bnpl'] === 'yes') {
             $leasing_percent = (float) $opts['leasing_percent'];
             $bnpl_percent = (float) $opts['bnpl_percent'];
-            $payload['leasing'] = array('price' => (int) round($this->round_price($calc['final_price'] + ($calc['final_price'] * $leasing_percent / 100))));
-            $payload['bnpl'] = array('price' => (int) round($this->round_price($calc['final_price'] + ($calc['final_price'] * $bnpl_percent / 100))));
+            $leasing_price = $this->round_price($cash_price + ($cash_price * $leasing_percent / 100));
+            $bnpl_price = $this->round_price($cash_price + ($cash_price * $bnpl_percent / 100));
+
+            $leasing_res = $this->resolve_channel_price('leasing', $leasing_price, $remote_info, $opts);
+            if ($leasing_res['send']) {
+                $payload['leasing'] = array('price' => (int) round($leasing_res['price']));
+            }
+            if ($leasing_res['note']) { $notes[] = $leasing_res['note']; }
+
+            $bnpl_res = $this->resolve_channel_price('bnpl', $bnpl_price, $remote_info, $opts);
+            if ($bnpl_res['send']) {
+                $payload['bnpl'] = array('price' => (int) round($bnpl_res['price']));
+            }
+            if ($bnpl_res['note']) { $notes[] = $bnpl_res['note']; }
         }
+
+        $calc['final_price'] = (int) round($cash_price);
+        $calc['notes'] = $notes;
         return array('success' => true, 'payload' => $payload, 'calc' => $calc);
+    }
+
+    /**
+     * بررسی بازه‌ی مجاز یک کانال اقساطی/اعتباری و تصمیم برای ارسال/اصلاح/حذف.
+     */
+    private function resolve_channel_price($channel, $price, $remote_info, $opts) {
+        $enforce = ($channel === 'leasing')
+            ? (!isset($opts['enforce_leasing_range']) || $opts['enforce_leasing_range'] === 'yes')
+            : (!isset($opts['enforce_bnpl_range']) || $opts['enforce_bnpl_range'] === 'yes');
+        if (!$enforce) {
+            return array('send' => true, 'price' => $price, 'note' => '');
+        }
+        $range = $this->extract_range($remote_info, $channel);
+        $res = $this->apply_range_strategy($price, $range);
+        $label = $channel === 'leasing' ? 'اقساطی' : 'اعتباری';
+        if ($res['status'] === 'blocked') {
+            // کانال اختیاری است؛ به‌جای بلاک کل عملیات، این کانال ارسال نمی‌شود.
+            return array('send' => false, 'price' => $price, 'note' => 'قیمت ' . $label . ' خارج از بازه بود و ارسال نشد.');
+        }
+        if ($res['status'] === 'clamped') {
+            return array('send' => true, 'price' => $res['price'], 'note' => 'قیمت ' . $label . ' به حد مجاز اصلاح شد.');
+        }
+        return array('send' => true, 'price' => $res['price'], 'note' => '');
+    }
+
+    /**
+     * محاسبه‌ی قیمت رقابتی برای بردن بای‌باکس با رعایت کف امن.
+     */
+    private function competitive_price($normal_price, $remote_info, $opts) {
+        $result = array('applied' => false, 'price' => $normal_price, 'message' => '');
+        if (!is_array($remote_info)) { return $result; }
+        $is_winner = !empty($remote_info['isWinnerOfBuyBox']);
+        $winner_price = isset($remote_info['buyBoxWinnerPrice']) ? (float) $remote_info['buyBoxWinnerPrice'] : 0;
+        if ($is_winner || $winner_price <= 0) {
+            return $result; // اگر برنده‌ایم یا قیمت برنده نامعتبر است، کاری نمی‌کنیم.
+        }
+        // کف مجاز API
+        $cash_range = $this->extract_range($remote_info, 'cash');
+        $api_floor = ($cash_range['min'] !== null && $cash_range['min'] > 0) ? $cash_range['min'] : 0;
+        // کف حاشیه‌ی سود سفارشی (درصدی از قیمت نرمال)
+        $margin = (float) $opts['competitive_min_margin_percent'];
+        $margin_floor = $normal_price * (1 - $margin / 100);
+        $floor = max($api_floor, $margin_floor, 0);
+
+        // قیمت هدف: کمی زیر قیمت برنده
+        $type = isset($opts['competitive_undercut_type']) ? $opts['competitive_undercut_type'] : 'amount';
+        $value = (float) $opts['competitive_undercut_value'];
+        $target = $type === 'percent' ? ($winner_price * (1 - $value / 100)) : ($winner_price - $value);
+
+        // هرگز بالاتر از قیمت نرمال و هرگز پایین‌تر از کف
+        $final = min($normal_price, max($floor, $target));
+        if ($final <= 0 || $final >= $normal_price) {
+            return $result; // اگر قیمت رقابتی بهتر از نرمال نشد، بی‌خیال.
+        }
+        $result['applied'] = true;
+        $result['price'] = $final;
+        $result['message'] = 'قیمت رقابتی بای‌باکس اعمال شد (هدف زیر ' . number_format($winner_price) . ').';
+        return $result;
+    }
+
+    /**
+     * پیش‌نمایش محاسبه‌ی قیمت بدون ارسال (dry-run).
+     */
+    public function preview($product_id, $remote_info = array()) {
+        $opts = $this->options();
+        $res = $this->price_payload($product_id, $remote_info);
+        $calc = isset($res['calc']) ? $res['calc'] : array();
+        return array(
+            'success' => !empty($res['success']),
+            'message' => isset($res['message']) ? $res['message'] : '',
+            'price_basis' => isset($opts['price_basis']) ? $opts['price_basis'] : 'wc',
+            'price_unit' => isset($opts['price_unit']) ? $opts['price_unit'] : 'rial',
+            'base_price' => isset($calc['base_price']) ? $calc['base_price'] : null,
+            'markup_percent' => isset($calc['markup_percent']) ? $calc['markup_percent'] : null,
+            'calculated_price' => isset($calc['calculated_price']) ? $calc['calculated_price'] : null,
+            'final_price' => isset($calc['final_price']) ? $calc['final_price'] : null,
+            'range' => isset($calc['range']) ? $calc['range'] : null,
+            'range_status' => isset($calc['range_status']) ? $calc['range_status'] : null,
+            'notes' => isset($calc['notes']) ? $calc['notes'] : array(),
+            'payload' => isset($res['payload']) ? $res['payload'] : null,
+        );
     }
 
     public function round_price($price) {
@@ -157,15 +289,26 @@ class TLSCP_Pricing {
     }
 
     private function extract_cash_range($remote_info) {
+        return $this->extract_range($remote_info, 'cash');
+    }
+
+    /**
+     * استخراج بازه‌ی مجاز یک کانال قیمت (cash | leasing | bnpl) از اطلاعات تنوع یا محصول.
+     */
+    private function extract_range($remote_info, $channel = 'cash') {
         $range = array('min' => null, 'max' => null);
         if (!is_array($remote_info)) {
             return $range;
         }
-        if (isset($remote_info['cashMinTolerance'])) { $range['min'] = (float) $remote_info['cashMinTolerance']; }
-        if (isset($remote_info['cashMaxTolerance'])) { $range['max'] = (float) $remote_info['cashMaxTolerance']; }
-        if (isset($remote_info['cash']) && is_array($remote_info['cash'])) {
-            if (isset($remote_info['cash']['minPrice'])) { $range['min'] = (float) $remote_info['cash']['minPrice']; }
-            if (isset($remote_info['cash']['maxPrice'])) { $range['max'] = (float) $remote_info['cash']['maxPrice']; }
+        // سطح محصول: cashMinTolerance / leasingMaxTolerance / ...
+        $minKey = $channel . 'MinTolerance';
+        $maxKey = $channel . 'MaxTolerance';
+        if (isset($remote_info[$minKey])) { $range['min'] = (float) $remote_info[$minKey]; }
+        if (isset($remote_info[$maxKey])) { $range['max'] = (float) $remote_info[$maxKey]; }
+        // سطح تنوع: cash.minPrice/maxPrice (PricingInfo)
+        if (isset($remote_info[$channel]) && is_array($remote_info[$channel])) {
+            if (isset($remote_info[$channel]['minPrice'])) { $range['min'] = (float) $remote_info[$channel]['minPrice']; }
+            if (isset($remote_info[$channel]['maxPrice'])) { $range['max'] = (float) $remote_info[$channel]['maxPrice']; }
         }
         return $range;
     }

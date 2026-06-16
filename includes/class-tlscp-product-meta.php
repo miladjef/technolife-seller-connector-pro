@@ -36,6 +36,9 @@ class TLSCP_Product_Meta {
         <p>
             <button type="button" class="button button-primary tlscp-sync-product" data-product-id="<?php echo esc_attr($post->ID); ?>">ارسال قیمت و موجودی</button>
             <button type="button" class="button tlscp-load-item-info" data-product-id="<?php echo esc_attr($post->ID); ?>">اطلاعات زنده تکنولایف</button>
+            <button type="button" class="button tlscp-price-preview" data-product-id="<?php echo esc_attr($post->ID); ?>">پیش‌نمایش قیمت</button>
+            <button type="button" class="button tlscp-toggle-hide" data-product-id="<?php echo esc_attr($post->ID); ?>" data-hide="1">مخفی در تکنولایف</button>
+            <button type="button" class="button tlscp-toggle-hide" data-product-id="<?php echo esc_attr($post->ID); ?>" data-hide="0">نمایش در تکنولایف</button>
         </p>
         <div class="tlscp-item-info" data-for="<?php echo esc_attr($post->ID); ?>"></div>
         <?php

@@ -78,4 +78,53 @@ class TLSCP_Crypto {
 
         return base64_encode($iv) . ':' . base64_encode($tag) . ':' . base64_encode($ciphertext);
     }
+
+    // ---- رمزنگاری Secret هنگام ذخیره در دیتابیس (at-rest) ----
+
+    private static function store_key() {
+        $material = (defined('AUTH_KEY') ? AUTH_KEY : '') . (defined('SECURE_AUTH_KEY') ? SECURE_AUTH_KEY : '') . (defined('LOGGED_IN_KEY') ? LOGGED_IN_KEY : 'tlscp-fallback');
+        return hash('sha256', 'tlscp|' . $material, true); // 32 بایت برای AES-256
+    }
+
+    /**
+     * رمزنگاری مقدار برای ذخیره؛ خروجی با پیشوند enc:: مشخص می‌شود.
+     */
+    public static function encrypt_store($plain) {
+        $plain = (string) $plain;
+        if ($plain === '' || !function_exists('openssl_encrypt')) {
+            return $plain;
+        }
+        $iv = function_exists('random_bytes') ? random_bytes(16) : openssl_random_pseudo_bytes(16);
+        $cipher = openssl_encrypt($plain, 'aes-256-cbc', self::store_key(), OPENSSL_RAW_DATA, $iv);
+        if ($cipher === false) {
+            return $plain;
+        }
+        return 'enc::' . base64_encode($iv . $cipher);
+    }
+
+    /**
+     * بازگرداندن مقدار؛ اگر رمزنگاری‌نشده (legacy) باشد، همان مقدار برگردانده می‌شود.
+     */
+    public static function decrypt_store($stored) {
+        $stored = (string) $stored;
+        if (strpos($stored, 'enc::') !== 0 || !function_exists('openssl_decrypt')) {
+            return $stored;
+        }
+        $raw = base64_decode(substr($stored, 5), true);
+        if ($raw === false || strlen($raw) <= 16) {
+            return '';
+        }
+        $iv = substr($raw, 0, 16);
+        $cipher = substr($raw, 16);
+        $plain = openssl_decrypt($cipher, 'aes-256-cbc', self::store_key(), OPENSSL_RAW_DATA, $iv);
+        return $plain === false ? '' : $plain;
+    }
+
+    /**
+     * Secret واقعی را از تنظیمات برمی‌گرداند (سازگار با حالت رمزنگاری‌شده و قدیمی).
+     */
+    public static function reveal_secret($opts) {
+        $stored = isset($opts['secret_key']) ? $opts['secret_key'] : '';
+        return self::decrypt_store($stored);
+    }
 }

@@ -54,6 +54,42 @@ class TLSCP_Logger {
         return $wpdb->get_row($wpdb->prepare("SELECT * FROM {$this->table()} WHERE id = %d", absint($id)), ARRAY_A);
     }
 
+    /**
+     * جستجوی لاگ با فیلتر و صفحه‌بندی.
+     * args: action, success ('', '0','1'), search, per_page, page
+     */
+    public function query($args = array()) {
+        global $wpdb;
+        $args = wp_parse_args($args, array('action' => '', 'success' => '', 'search' => '', 'per_page' => 30, 'page' => 1));
+        $per_page = max(1, min(200, absint($args['per_page'])));
+        $page = max(1, absint($args['page']));
+        $offset = ($page - 1) * $per_page;
+
+        $where = '1=1';
+        $params = array();
+        if ($args['action'] !== '') { $where .= ' AND action = %s'; $params[] = sanitize_text_field($args['action']); }
+        if ($args['success'] === '0' || $args['success'] === '1') { $where .= ' AND success = %d'; $params[] = (int) $args['success']; }
+        if ($args['search'] !== '') {
+            $like = '%' . $wpdb->esc_like(sanitize_text_field($args['search'])) . '%';
+            $where .= ' AND (endpoint LIKE %s OR object_id LIKE %s OR message LIKE %s)';
+            $params[] = $like; $params[] = $like; $params[] = $like;
+        }
+
+        $count_sql = "SELECT COUNT(*) FROM {$this->table()} WHERE {$where}";
+        $total = (int) ($params ? $wpdb->get_var($wpdb->prepare($count_sql, $params)) : $wpdb->get_var($count_sql));
+
+        $sql = "SELECT * FROM {$this->table()} WHERE {$where} ORDER BY id DESC LIMIT %d OFFSET %d";
+        $rows = $wpdb->get_results($wpdb->prepare($sql, array_merge($params, array($per_page, $offset))), ARRAY_A);
+
+        return array('rows' => $rows ?: array(), 'total' => $total, 'per_page' => $per_page, 'page' => $page, 'pages' => (int) ceil($total / $per_page));
+    }
+
+    public function distinct_actions() {
+        global $wpdb;
+        $rows = $wpdb->get_col("SELECT DISTINCT action FROM {$this->table()} WHERE action <> '' ORDER BY action ASC");
+        return is_array($rows) ? $rows : array();
+    }
+
     public function clear_old($days = 30) {
         global $wpdb;
         $days = max(1, absint($days));

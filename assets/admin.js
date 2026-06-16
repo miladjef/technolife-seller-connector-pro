@@ -144,4 +144,84 @@
       $r.html('<div class="tlscp-result '+(r&&r.success?'ok':'err')+'">'+esc(r&&r.message?r.message:'خطا')+'</div>');
     }).fail(function(){ $r.html('<p class="tlscp-danger">خطای ارتباط</p>'); });
   });
+  // --- پیش‌نمایش قیمت (dry-run) ---
+  $(document).on('click','.tlscp-price-preview',function(e){
+    e.preventDefault();
+    var id=$(this).data('product-id');
+    var $box=$('.tlscp-item-info[data-for="'+id+'"]');
+    $box.html('<p>در حال محاسبه...</p>');
+    post('tlscp_price_preview',{product_id:id}).done(function(r){
+      if(!r){ $box.html('<p class="tlscp-danger">خطا</p>'); return; }
+      var range=r.range||{};
+      var notes=(r.notes&&r.notes.length)?('<tr><td>یادداشت‌ها</td><td>'+r.notes.map(esc).join('<br>')+'</td></tr>'):'';
+      var rows=''
+        +'<tr><td>مبنا</td><td>'+(r.price_basis==='reference'?'قیمت مرجع':'ووکامرس')+' / واحد: '+(r.price_unit==='toman'?'تومان':'ریال')+'</td></tr>'
+        +'<tr><td>قیمت مبنا</td><td class="ltr">'+nf(r.base_price)+'</td></tr>'
+        +'<tr><td>درصد افزایش</td><td class="ltr">'+nf(r.markup_percent)+'٪</td></tr>'
+        +'<tr><td>قیمت محاسبه‌شده</td><td class="ltr">'+nf(r.calculated_price)+'</td></tr>'
+        +'<tr><td>قیمت نهایی (ریال)</td><td class="ltr"><strong>'+nf(r.final_price)+'</strong></td></tr>'
+        +'<tr><td>بازه مجاز</td><td class="ltr">'+nf(range.min)+' تا '+nf(range.max)+'</td></tr>'
+        +'<tr><td>وضعیت بازه</td><td>'+esc(r.range_status||'-')+'</td></tr>'
+        +notes;
+      var cls=r.success?'ok':'err';
+      $box.html('<div class="tlscp-result '+cls+'">'+(r.success?'این مقدار ارسال خواهد شد (بدون ارسال واقعی):':esc(r.message))+'</div><table class="widefat striped tlscp-info-table"><tbody>'+rows+'</tbody></table>');
+    }).fail(function(){ $box.html('<p class="tlscp-danger">خطای ارتباط</p>'); });
+  });
+
+  // --- مخفی / نمایش ---
+  $(document).on('click','.tlscp-toggle-hide',function(e){
+    e.preventDefault();
+    var id=$(this).data('product-id'), hide=$(this).data('hide');
+    var $box=$('.tlscp-item-info[data-for="'+id+'"]');
+    $box.html('<p>در حال ارسال...</p>');
+    post('tlscp_toggle_hide',{product_id:id,hide:hide}).done(function(r){
+      $box.html('<div class="tlscp-result '+(r&&r.success?'ok':'err')+'">'+esc(r&&r.message?r.message:'خطا')+'</div>');
+    }).fail(function(){ $box.html('<p class="tlscp-danger">خطای ارتباط</p>'); });
+  });
+
+  // --- صف‌بندی همگام‌سازی کامل ---
+  $(document).on('click','#tlscp-queue-sync',function(e){
+    e.preventDefault();
+    showResult('در حال صف‌بندی...',true);
+    post('tlscp_queue_sync').done(function(r){
+      if(r&&r.success){ showResult('صف‌بندی شد: '+nf(r.queued)+' از '+nf(r.total)+' محصول (روش: '+esc(r.method)+')',true); }
+      else { showResult(r,false); }
+    }).fail(function(x){ showResult(x.responseText||'خطا',false); });
+  });
+
+  // --- مرورگر کاتالوگ ---
+  var catPage=1;
+  function loadCatalog(page){
+    catPage=page||1;
+    var search=$.trim($('#tlscp-cat-search').val());
+    var $r=$('#tlscp-cat-result'); $r.html('<p>در حال بارگذاری کاتالوگ...</p>');
+    post('tlscp_catalog_browse',{page:catPage,search:search}).done(function(r){
+      if(!r||!r.success){ $r.html('<p class="tlscp-danger">'+esc(r&&r.message?r.message:'خطا')+'</p>'); return; }
+      var html='<table class="widefat striped"><thead><tr><th>ProductCode</th><th>عنوان</th><th>برند</th><th>موجودی</th><th>قیمت مرجع</th><th>محصول ووکامرس پیشنهادی</th><th>عملیات</th></tr></thead><tbody>';
+      (r.items||[]).forEach(function(it){
+        var act;
+        if(it.linked){ act='<span class="tlscp-badge tlscp-ok">متصل (#'+it.linked+')</span>'; }
+        else if(it.match_id){ act='<button class="button tlscp-cat-link" data-wc="'+it.match_id+'" data-code="'+esc(it.code)+'">اتصال به #'+it.match_id+'</button>'; }
+        else { act='<span class="description">تطبیق خودکار نیافت</span>'; }
+        var matchTxt=it.match_id?(esc(it.match_title)+' <small>('+esc(it.match_reason)+')</small>'):'-';
+        html+='<tr><td class="ltr">'+esc(it.code)+'</td><td>'+esc(it.title)+'</td><td>'+esc(it.brand)+'</td><td class="ltr">'+nf(it.totalStock)+'</td><td class="ltr">'+nf(it.referencePrice)+'</td><td>'+matchTxt+'</td><td>'+act+'</td></tr>';
+      });
+      html+='</tbody></table>';
+      $r.html(html);
+      var pages=Math.max(1,Math.ceil((r.count||0)/(r.limit||20)));
+      var pager='صفحه '+catPage+' از '+pages+' &nbsp; ';
+      if(catPage>1) pager+='<button class="button tlscp-cat-page" data-page="'+(catPage-1)+'">قبلی</button> ';
+      if(catPage<pages) pager+='<button class="button tlscp-cat-page" data-page="'+(catPage+1)+'">بعدی</button>';
+      $('#tlscp-cat-pager').html(pager);
+    }).fail(function(){ $r.html('<p class="tlscp-danger">خطای ارتباط</p>'); });
+  }
+  $(document).on('click','#tlscp-cat-load',function(e){ e.preventDefault(); loadCatalog(1); });
+  $(document).on('click','.tlscp-cat-page',function(e){ e.preventDefault(); loadCatalog($(this).data('page')); });
+  $(document).on('click','.tlscp-cat-link',function(e){
+    e.preventDefault();
+    var $btn=$(this); $btn.prop('disabled',true).text('در حال اتصال...');
+    post('tlscp_catalog_link',{wc_product_id:$btn.data('wc'),product_code:$btn.data('code')}).done(function(r){
+      $btn.replaceWith('<span class="tlscp-badge '+(r&&r.success?'tlscp-ok':'tlscp-error')+'">'+esc(r&&r.message?r.message:'خطا')+'</span>');
+    }).fail(function(){ $btn.prop('disabled',false).text('خطا، دوباره'); });
+  });
 })(jQuery);
