@@ -64,7 +64,9 @@ class TLSCP_Sync {
         }
         $opts = wp_parse_args(get_option(TLSCP_OPTION_KEY, array()), TLSCP_Installer::default_options());
         $stock_quantity = $this->get_wc_stock_quantity($product);
-        $available = max(0, $stock_quantity - absint($opts['inventory_reserve']));
+        $reserve_meta = get_post_meta($product_id, '_tlscp_reserve', true);
+        $reserve = ($reserve_meta !== '' && $reserve_meta !== false) ? absint($reserve_meta) : absint($opts['inventory_reserve']);
+        $available = max(0, $stock_quantity - $reserve);
         if ($opts['inventory_max_send'] !== '') {
             $available = min($available, absint($opts['inventory_max_send']));
         }
@@ -217,6 +219,8 @@ class TLSCP_Sync {
         if ($cash_price !== null) {
             update_post_meta($product_id, '_tlscp_remote_cash_price', $cash_price);
         }
+        update_post_meta($product_id, '_tlscp_has_discount', !empty($item['hasDiscount']) ? 'yes' : 'no');
+        update_post_meta($product_id, '_tlscp_hidden', !empty($item['hide']) ? 'yes' : 'no');
         foreach (array('stock', 'available', 'processingCount', 'waitingCount', 'waitingForPaymentCount', 'refundCount') as $f) {
             if (isset($item[$f])) {
                 update_post_meta($product_id, '_tlscp_rt_' . $f, (int) $item[$f]);

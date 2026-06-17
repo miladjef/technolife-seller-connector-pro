@@ -27,6 +27,7 @@ class TLSCP_Product_Meta {
         <p><label>کد محصول تکنولایف<br><input type="text" class="widefat" name="tlscp_product_code" value="<?php echo esc_attr($fields['_tlscp_product_code']); ?>" placeholder="productCode"></label></p>
         <p><label>کد تنوع فروشنده<br><input type="text" class="widefat" name="tlscp_seller_item_code" value="<?php echo esc_attr($fields['_tlscp_seller_item_code']); ?>" placeholder="sellerItemCode"></label></p>
         <p><label>کد فروشندگی<br><input type="text" class="widefat" name="tlscp_sales_code" value="<?php echo esc_attr($fields['_tlscp_sales_code']); ?>" placeholder="SalesCode"></label></p>
+        <p><label>ذخیره موجودی این محصول<br><input type="number" min="0" class="widefat" name="tlscp_reserve" value="<?php echo esc_attr(isset($fields['_tlscp_reserve']) ? $fields['_tlscp_reserve'] : ''); ?>" placeholder="خالی = استفاده از مقدار کلی"></label></p>
         <p class="description">برای محصولات متغیر، بهتر است کد تنوع فروشنده را روی خود variation وارد کنید. ProductCode می‌تواند روی محصول مادر باشد.</p>
         <hr>
         <p><strong>آخرین قیمت:</strong> <?php echo esc_html($fields['_tlscp_last_price'] ?: '-'); ?></p>
@@ -45,7 +46,7 @@ class TLSCP_Product_Meta {
     }
 
     private static function get_fields($post_id) {
-        $keys = array('_tlscp_enabled','_tlscp_product_code','_tlscp_seller_item_code','_tlscp_sales_code','_tlscp_last_price','_tlscp_last_stock','_tlscp_last_sync','_tlscp_last_error');
+        $keys = array('_tlscp_enabled','_tlscp_product_code','_tlscp_seller_item_code','_tlscp_sales_code','_tlscp_reserve','_tlscp_last_price','_tlscp_last_stock','_tlscp_last_sync','_tlscp_last_error');
         $fields = array();
         foreach ($keys as $key) {
             $fields[$key] = get_post_meta($post_id, $key, true);
@@ -64,6 +65,11 @@ class TLSCP_Product_Meta {
         update_post_meta($post_id, '_tlscp_product_code', isset($_POST['tlscp_product_code']) ? sanitize_text_field(wp_unslash($_POST['tlscp_product_code'])) : '');
         update_post_meta($post_id, '_tlscp_seller_item_code', isset($_POST['tlscp_seller_item_code']) ? sanitize_text_field(wp_unslash($_POST['tlscp_seller_item_code'])) : '');
         update_post_meta($post_id, '_tlscp_sales_code', isset($_POST['tlscp_sales_code']) ? sanitize_text_field(wp_unslash($_POST['tlscp_sales_code'])) : '');
+        if (isset($_POST['tlscp_reserve']) && $_POST['tlscp_reserve'] !== '') {
+            update_post_meta($post_id, '_tlscp_reserve', absint(wp_unslash($_POST['tlscp_reserve'])));
+        } else {
+            delete_post_meta($post_id, '_tlscp_reserve');
+        }
 
         $opts = wp_parse_args(get_option(TLSCP_OPTION_KEY, array()), TLSCP_Installer::default_options());
         if ($opts['auto_sync_on_save'] === 'yes' && get_post_meta($post_id, '_tlscp_enabled', true) === 'yes' && self::$sync) {
@@ -124,7 +130,7 @@ class TLSCP_Product_Meta {
         $enabled = get_post_meta($post_id, '_tlscp_enabled', true);
         $seller = get_post_meta($post_id, '_tlscp_seller_item_code', true);
         if ($enabled === 'yes' && $seller) {
-            echo '<span class="tlscp-badge tlscp-ok">متصل</span><br><small>' . esc_html($seller) . '</small>';
+            echo '<span class="tlscp-badge tlscp-ok">متصل</span><br><small class="ltr">' . esc_html($seller) . '</small>';
             $opts = get_option(TLSCP_OPTION_KEY, array());
             $alerts = !is_array($opts) || !isset($opts['buybox_alerts']) || $opts['buybox_alerts'] === 'yes';
             $bb = get_post_meta($post_id, '_tlscp_buybox_winner', true);
@@ -132,6 +138,20 @@ class TLSCP_Product_Meta {
                 echo $bb === 'yes'
                     ? '<br><span class="tlscp-badge tlscp-ok">برنده بای‌باکس</span>'
                     : '<br><span class="tlscp-badge tlscp-error">بازنده بای‌باکس</span>';
+            }
+            if (get_post_meta($post_id, '_tlscp_hidden', true) === 'yes') {
+                echo '<br><span class="tlscp-badge">مخفی در تکنولایف</span>';
+            }
+            if (get_post_meta($post_id, '_tlscp_has_discount', true) === 'yes') {
+                echo '<br><span class="tlscp-badge tlscp-ok">تخفیف فعال</span>';
+            }
+            $err = get_post_meta($post_id, '_tlscp_last_error', true);
+            if ($err) {
+                echo '<br><span class="tlscp-badge tlscp-error" title="' . esc_attr($err) . '">خطا</span>';
+            }
+            $last = get_post_meta($post_id, '_tlscp_last_sync', true);
+            if ($last) {
+                echo '<br><small style="color:#646970">آخرین ارسال: ' . esc_html($last) . '</small>';
             }
         } else {
             echo '<span class="tlscp-badge">متصل نیست</span>';

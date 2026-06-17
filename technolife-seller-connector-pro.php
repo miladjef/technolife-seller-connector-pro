@@ -3,8 +3,8 @@
  * Plugin Name: Technolife Seller Connector Pro for WooCommerce
  * Plugin URI: https://miladjafarigavzan.ir/
  * Description: اتصال حرفه‌ای ووکامرس به Seller API تکنولایف: قیمت‌گذاری هوشمند، موجودی، سفارش‌ها، پروموشن، لاگ و خروجی اکسل/CSV.
- * Version: 1.3.0
- * Author: Milad Jafari
+ * Version: 1.4.0
+ * Author: Milad Jafari Gavzan
  * Text Domain: tlscp
  * Domain Path: /languages
  * Requires at least: 6.0
@@ -16,7 +16,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('TLSCP_VERSION', '1.3.0');
+define('TLSCP_VERSION', '1.4.0');
 define('TLSCP_PLUGIN_FILE', __FILE__);
 define('TLSCP_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('TLSCP_PLUGIN_URL', plugin_dir_url(__FILE__));
@@ -125,6 +125,15 @@ final class TLSCP_Plugin {
         }
         if (!function_exists('openssl_encrypt')) {
             echo '<div class="notice notice-error"><p><strong>Technolife Seller Connector Pro:</strong> افزونه openssl در PHP فعال نیست؛ تولید encrypted-secret انجام نمی‌شود.</p></div>';
+        }
+        // یادآوری پیکربندی اولیه (فقط در صفحات افزونه)
+        $screen = function_exists('get_current_screen') ? get_current_screen() : null;
+        $on_plugin_page = $screen && isset($screen->id) && strpos($screen->id, 'tlscp') !== false;
+        if ($on_plugin_page) {
+            $opts = wp_parse_args(get_option(TLSCP_OPTION_KEY, array()), TLSCP_Installer::default_options());
+            if (empty($opts['api_key']) || empty($opts['secret_key'])) {
+                echo '<div class="notice notice-warning"><p><strong>تکنولایف:</strong> برای شروع، API Key و Secret Key را در «تنظیمات اتصال» وارد کنید.</p></div>';
+            }
         }
     }
 }

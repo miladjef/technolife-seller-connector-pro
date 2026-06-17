@@ -31,10 +31,14 @@
       var it=r.item||{};
       var cash=(it.cash&&it.cash.price!==undefined)?it.cash.price:null;
       var bb=it.isWinnerOfBuyBox?'<span class="tlscp-badge tlscp-ok">برنده</span>':'<span class="tlscp-badge tlscp-error">بازنده</span>';
+      var disc='-';
+      if(it.hasDiscount && it.discount){ var d=it.discount; disc='فعال'+(d.discountedPercent?(' ('+nf(d.discountedPercent)+'٪)'):(d.discountedPrice?(' ('+nf(d.discountedPrice)+' ریال)'):'')); }
+      else if(it.hasDiscount){ disc='<span class="tlscp-badge tlscp-ok">فعال</span>'; }
       var rows=''
         +'<tr><td>وضعیت بای‌باکس</td><td>'+bb+'</td></tr>'
         +'<tr><td>قیمت برنده بای‌باکس</td><td class="ltr">'+nf(it.buyBoxWinnerPrice)+'</td></tr>'
         +'<tr><td>قیمت نقدی فعلی من</td><td class="ltr">'+nf(cash)+'</td></tr>'
+        +'<tr><td>تخفیف فعال</td><td>'+disc+'</td></tr>'
         +'<tr><td>موجودی (available)</td><td class="ltr">'+nf(it.available)+'</td></tr>'
         +'<tr><td>انبارش (stock)</td><td class="ltr">'+nf(it.stock)+'</td></tr>'
         +'<tr><td>در فرایند فروش</td><td class="ltr">'+nf(it.processingCount)+'</td></tr>'

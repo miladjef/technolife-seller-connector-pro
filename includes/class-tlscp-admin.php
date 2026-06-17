@@ -26,9 +26,12 @@ class TLSCP_Admin {
         add_action('admin_menu', array($this, 'menu'));
         add_action('admin_enqueue_scripts', array($this, 'assets'));
         add_action('admin_post_tlscp_save_settings', array($this, 'save_settings'));
+        add_action('admin_post_tlscp_export_settings', array($this, 'export_settings'));
+        add_action('admin_post_tlscp_import_settings', array($this, 'import_settings'));
         add_action('admin_post_tlscp_export_products', array($this, 'export_products'));
         add_action('admin_post_tlscp_export_logs', array($this, 'export_logs'));
         add_action('admin_post_tlscp_export_orders', array($this, 'export_orders'));
+        add_action('wp_dashboard_setup', array($this, 'register_dashboard_widget'));
 
         add_action('wp_ajax_tlscp_test_connection', array($this, 'ajax_test_connection'));
         add_action('wp_ajax_tlscp_sync_product', array($this, 'ajax_sync_product'));
@@ -121,6 +124,11 @@ class TLSCP_Admin {
     public function page_settings() {
         $opts = $this->opts();
         $this->header('تنظیمات اتصال تکنولایف');
+        if (isset($_GET['tlscp_import'])) {
+            $map = array('ok' => array('success', 'تنظیمات با موفقیت وارد شد.'), 'nofile' => array('error', 'فایلی انتخاب نشد.'), 'badjson' => array('error', 'فایل JSON نامعتبر است.'));
+            $k = sanitize_text_field(wp_unslash($_GET['tlscp_import']));
+            if (isset($map[$k])) { echo '<div class="notice notice-' . esc_attr($map[$k][0]) . ' is-dismissible"><p>' . esc_html($map[$k][1]) . '</p></div>'; }
+        }
         ?>
         <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="tlscp-form">
             <?php wp_nonce_field('tlscp_save_settings'); ?><input type="hidden" name="action" value="tlscp_save_settings"><input type="hidden" name="section" value="settings">
@@ -204,6 +212,16 @@ class TLSCP_Admin {
                     <tr><th>هشدار باخت بای‌باکس</th><td><label><input type="checkbox" name="notify_buybox_loss" value="yes" <?php checked($opts['notify_buybox_loss'], 'yes'); ?>> هنگام اسکن خودکار، اگر بازنده‌ای بود ایمیل ارسال شود</label></td></tr>
                     <tr><th>آستانه‌ی هشدار خطا</th><td><input type="number" min="0" name="notify_error_threshold" value="<?php echo esc_attr($opts['notify_error_threshold']); ?>" style="width:80px"> <span class="description">اگر تعداد خطاهای اخیر از این مقدار بیشتر شد، ایمیل ارسال شود (۰ = غیرفعال)</span></td></tr>
                 </table>
+            </div>
+            <div class="tlscp-panel"><h2>پشتیبان‌گیری تنظیمات</h2>
+                <p class="description">برای انتقال پیکربندی بین سایت‌ها. کلیدهای حساس (API/Secret) صادر نمی‌شوند و هنگام ورود نیز دست‌نخورده می‌مانند.</p>
+                <p><a class="button" href="<?php echo esc_url(wp_nonce_url(admin_url('admin-post.php?action=tlscp_export_settings'), 'tlscp_export_settings')); ?>">خروجی تنظیمات (JSON)</a></p>
+                <form method="post" enctype="multipart/form-data" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="margin-top:8px">
+                    <?php wp_nonce_field('tlscp_import_settings'); ?>
+                    <input type="hidden" name="action" value="tlscp_import_settings">
+                    <input type="file" name="settings_file" accept="application/json,.json">
+                    <button class="button">ورود تنظیمات</button>
+                </form>
             </div>
             <div class="tlscp-panel"><h2>حذف افزونه</h2>
                 <table class="form-table" role="presentation">
@@ -489,6 +507,68 @@ class TLSCP_Admin {
         if (!empty($_REQUEST['tlscp_bulk_done'])) {
             echo '<div class="notice notice-success is-dismissible"><p>تکنولایف: عملیات روی ' . absint($_REQUEST['tlscp_bulk_done']) . ' مورد انجام شد.</p></div>';
         }
+    }
+
+    public function register_dashboard_widget() {
+        if (current_user_can('manage_woocommerce')) {
+            wp_add_dashboard_widget('tlscp_dashboard_widget', 'تکنولایف — وضعیت', array($this, 'dashboard_widget'));
+        }
+    }
+
+    public function dashboard_widget() {
+        $connected = $this->count_connected_products();
+        $losers = $this->count_buybox_losers();
+        $orders = count($this->orders->recent_orders(20));
+        $errors = count($this->logger->recent(20, 0));
+        echo '<ul style="margin:0">';
+        echo '<li>محصولات متصل: <strong>' . esc_html($connected) . '</strong></li>';
+        echo '<li>بازنده بای‌باکس: <strong style="color:' . ($losers ? '#b42318' : '#006b2d') . '">' . esc_html($losers) . '</strong></li>';
+        echo '<li>سفارش‌های اخیر: <strong>' . esc_html($orders) . '</strong></li>';
+        echo '<li>خطاهای اخیر API: <strong style="color:' . ($errors ? '#b42318' : '#006b2d') . '">' . esc_html($errors) . '</strong></li>';
+        echo '</ul>';
+        echo '<p><a class="button button-small" href="' . esc_url(admin_url('admin.php?page=tlscp-dashboard')) . '">داشبورد افزونه</a> ';
+        echo '<a class="button button-small" href="' . esc_url(admin_url('admin.php?page=tlscp-buybox')) . '">بای‌باکس</a></p>';
+    }
+
+    /**
+     * خروجی تنظیمات به‌صورت JSON (Secret حذف می‌شود).
+     */
+    public function export_settings() {
+        if (!current_user_can('manage_woocommerce')) { wp_die('دسترسی غیرمجاز'); }
+        check_admin_referer('tlscp_export_settings');
+        $opts = $this->opts();
+        unset($opts['secret_key'], $opts['api_key']); // اطلاعات حساس صادر نمی‌شوند
+        $json = wp_json_encode($opts, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+        nocache_headers();
+        header('Content-Type: application/json; charset=utf-8');
+        header('Content-Disposition: attachment; filename=tlscp-settings-' . gmdate('Y-m-d') . '.json');
+        echo $json;
+        exit;
+    }
+
+    /**
+     * ورود تنظیمات از فایل JSON (کلیدهای حساس و ساختار سفارش دست‌نخورده می‌مانند).
+     */
+    public function import_settings() {
+        if (!current_user_can('manage_woocommerce')) { wp_die('دسترسی غیرمجاز'); }
+        check_admin_referer('tlscp_import_settings');
+        $redirect = add_query_arg(array('page' => 'tlscp-settings'), admin_url('admin.php'));
+        if (empty($_FILES['settings_file']['tmp_name']) || !is_uploaded_file($_FILES['settings_file']['tmp_name'])) {
+            wp_safe_redirect(add_query_arg('tlscp_import', 'nofile', $redirect)); exit;
+        }
+        $raw = file_get_contents($_FILES['settings_file']['tmp_name']);
+        $incoming = json_decode($raw, true);
+        if (!is_array($incoming)) {
+            wp_safe_redirect(add_query_arg('tlscp_import', 'badjson', $redirect)); exit;
+        }
+        $current = $this->opts();
+        // کلیدهای حساس و داده‌های اتصال از مقادیر فعلی حفظ می‌شوند.
+        foreach (array('secret_key', 'api_key') as $keep) {
+            if (isset($current[$keep])) { $incoming[$keep] = $current[$keep]; }
+        }
+        $merged = wp_parse_args($incoming, TLSCP_Installer::default_options());
+        update_option(TLSCP_OPTION_KEY, $merged, false);
+        wp_safe_redirect(add_query_arg('tlscp_import', 'ok', $redirect)); exit;
     }
 
     public function save_settings() {
