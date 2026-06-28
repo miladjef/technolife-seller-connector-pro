@@ -3,6 +3,7 @@
 نسخه: 1.4.0
 
 
+
 افزونه اتصال ووکامرس به Seller API تکنولایف، شامل:
 
 - اتصال امن به API با `Authorization` و `encrypted-secret`
